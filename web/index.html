@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WhatYouSay — translation that works in the deadzone</title>
+<meta name="description" content="Fully on-device voice and text translation for Android. Nothing you say ever leaves your phone. Works with a weak signal. Works with none." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F3F0E8; --paper-2:#EAE5D9; --ink:#0E0E0C; --ink-soft:#56524A;
+    --line:#CDC6B5; --line-strong:#0E0E0C; --signal:#FF4A17; --signal-ink:#0E0E0C;
+    --font:'Space Grotesk',system-ui,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
+    --maxw:1180px; --pad:clamp(20px,5vw,72px);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--paper);color:var(--ink);font-family:var(--font);-webkit-font-smoothing:antialiased;line-height:1.5;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  ::selection{background:var(--signal);color:#fff}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding-left:var(--pad);padding-right:var(--pad)}
+  .mono{font-family:var(--mono);font-weight:500;letter-spacing:.08em;text-transform:uppercase;font-size:.72rem}
+  .rule{height:1px;background:var(--line);border:0}
+
+  /* signal bar at very top */
+  .topbar{height:5px;background:repeating-linear-gradient(90deg,var(--ink) 0 2px,transparent 2px 9px);opacity:.9}
+  .topbar.live{background:repeating-linear-gradient(90deg,var(--signal) 0 2px,transparent 2px 9px)}
+
+  /* nav */
+  header.nav{position:sticky;top:0;z-index:50;background:rgba(243,240,232,.86);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .nav-in{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.02em;font-size:1.06rem}
+  .sig{display:inline-flex;align-items:flex-end;gap:2px;height:16px}
+  .sig i{width:3px;background:var(--signal);display:block}
+  .sig i:nth-child(1){height:5px}.sig i:nth-child(2){height:9px}.sig i:nth-child(3){height:13px}.sig i:nth-child(4){height:17px}
+  .nav-links{display:flex;align-items:center;gap:28px}
+  .nav-links a{font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);transition:color .15s}
+  .nav-links a:hover{color:var(--ink)}
+  .btn{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:.92rem;padding:11px 18px;border:1px solid var(--line-strong);background:var(--ink);color:var(--paper);transition:transform .12s ease, background .15s}
+  .btn:hover{transform:translateY(-1px)}
+  .btn:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+  .btn.signal{background:var(--signal);color:var(--signal-ink);border-color:var(--signal)}
+  .btn.ghost{background:transparent;color:var(--ink)}
+  .btn.sm{padding:8px 14px;font-size:.8rem}
+
+  /* hero */
+  .hero{position:relative;padding:clamp(48px,9vw,120px) 0 clamp(40px,6vw,80px);
+    background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:34px 34px;background-position:center;}
+  .hero:after{content:"";position:absolute;inset:0;background:radial-gradient(120% 90% at 50% 0%,transparent 55%,var(--paper) 100%);pointer-events:none}
+  .hero-in{position:relative;z-index:2}
+  .eyebrow{color:var(--ink-soft);margin-bottom:26px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .eyebrow b{color:var(--ink);font-weight:700}
+  h1{font-size:clamp(2.6rem,8.2vw,6.1rem);line-height:.96;letter-spacing:-.035em;font-weight:700;max-width:14ch}
+  h1 em{font-style:normal;color:var(--signal)}
+  .live{margin-top:34px;border:1px solid var(--line);background:var(--paper-2);max-width:680px}
+  .live-top{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}
+  .live-top .dot{display:flex;align-items:center;gap:8px;color:var(--ink-soft)}
+  .live-top .dot b{width:7px;height:7px;background:var(--signal);border-radius:50%;display:inline-block;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .live-body{padding:20px 18px 22px;min-height:128px}
+  .live-src{color:var(--ink-soft);font-size:1.02rem;margin-bottom:14px}
+  .live-out{display:flex;align-items:baseline;gap:14px;transition:opacity .35s, transform .35s}
+  .live-out .lc{font-family:var(--mono);font-size:.7rem;font-weight:700;letter-spacing:.06em;color:#fff;background:var(--signal);padding:4px 7px;white-space:nowrap;transform:translateY(-2px)}
+  .live-out .lt{font-size:clamp(1.4rem,3.6vw,2rem);font-weight:600;letter-spacing:-.01em;line-height:1.15}
+  .sub{margin-top:30px;font-size:clamp(1.05rem,2vw,1.3rem);color:var(--ink-soft);max-width:50ch}
+  .sub b{color:var(--ink);font-weight:600}
+  .cta{margin-top:34px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+
+  /* airplane proof */
+  .proof{margin-top:42px;border:1px solid var(--line);display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;padding:16px 18px;max-width:680px;background:var(--paper)}
+  .proof .ptext{font-size:.95rem;color:var(--ink-soft)}
+  .proof .ptext strong{color:var(--ink);font-weight:600}
+  .toggle{display:inline-flex;align-items:center;gap:12px;cursor:pointer;user-select:none}
+  .switch{width:54px;height:28px;border:1px solid var(--line-strong);background:var(--paper-2);position:relative;transition:background .2s}
+  .switch i{position:absolute;top:2px;left:2px;width:22px;height:22px;background:var(--ink);transition:left .2s}
+  .toggle[aria-pressed="true"] .switch{background:var(--signal);border-color:var(--signal)}
+  .toggle[aria-pressed="true"] .switch i{left:28px}
+  .toggle .lbl{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase}
+  .signal-state{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft)}
+  .bars{display:inline-flex;align-items:flex-end;gap:2px;height:16px}
+  .bars i{width:3px;background:var(--ink);display:block}
+  .bars i:nth-child(1){height:5px}.bars i:nth-child(2){height:9px}.bars i:nth-child(3){height:13px}.bars i:nth-child(4){height:17px}
+  .offline .bars i{background:var(--line);height:5px}
+  .offline .signal-state{color:var(--signal)}
+
+  /* generic section */
+  section{padding:clamp(56px,9vw,118px) 0;border-top:1px solid var(--line)}
+  .shead{display:flex;gap:18px;align-items:baseline;margin-bottom:48px}
+  .snum{font-family:var(--mono);font-weight:700;color:var(--signal);font-size:.82rem;letter-spacing:.1em}
+  .stitle{font-size:clamp(1.7rem,4vw,2.8rem);letter-spacing:-.025em;font-weight:600;line-height:1.04;max-width:18ch}
+  .lead{color:var(--ink-soft);font-size:clamp(1.05rem,1.8vw,1.25rem);max-width:60ch;margin-top:4px}
+
+  /* pillars */
+  .pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--line)}
+  .pillar{padding:34px 28px;border-right:1px solid var(--line)}
+  .pillar:last-child{border-right:0}
+  .pillar .pn{font-family:var(--mono);color:var(--signal);font-size:.78rem;font-weight:700;letter-spacing:.08em}
+  .pillar h3{font-size:1.5rem;letter-spacing:-.02em;margin:18px 0 12px;font-weight:600}
+  .pillar p{color:var(--ink-soft);font-size:1rem}
+
+  /* pipeline */
+  .pipe{display:flex;align-items:stretch;flex-wrap:wrap;gap:0;border:1px solid var(--line)}
+  .stage{flex:1 1 0;min-width:150px;padding:26px 22px;border-right:1px solid var(--line);position:relative}
+  .stage:last-child{border-right:0}
+  .stage .sk{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;color:var(--ink-soft);text-transform:uppercase}
+  .stage h4{font-size:1.18rem;margin:12px 0 8px;font-weight:600;letter-spacing:-.01em}
+  .stage .mdl{font-family:var(--mono);font-size:.74rem;color:var(--signal);font-weight:500}
+  .stage .arrow{position:absolute;right:-7px;top:50%;width:13px;height:13px;background:var(--paper);border-top:1px solid var(--line-strong);border-right:1px solid var(--line-strong);transform:translateY(-50%) rotate(45deg);z-index:3}
+  .stage:last-child .arrow{display:none}
+  .noserver{margin-top:22px;display:flex;align-items:center;gap:12px;color:var(--ink-soft)}
+  .noserver .x{font-family:var(--mono);color:var(--signal);font-weight:700}
+  .swap{margin-top:18px;color:var(--ink-soft);font-size:.98rem}
+  .swap code{font-family:var(--mono);font-size:.82rem;background:var(--paper-2);padding:2px 6px;border:1px solid var(--line);color:var(--ink)}
+
+  /* conversation split */
+  .convo{display:grid;grid-template-columns:1fr 1px 1fr;border:1px solid var(--line);background:var(--paper-2)}
+  .side{padding:34px 28px}
+  .side .who{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;color:var(--ink-soft);text-transform:uppercase;margin-bottom:14px;display:flex;justify-content:space-between}
+  .side .said{font-size:1.35rem;font-weight:500;letter-spacing:-.01em;margin-bottom:10px}
+  .side .heard{color:var(--ink-soft);font-size:1rem}
+  .divider{background:var(--line)}
+  .side.b{text-align:right}
+  @media(max-width:720px){.convo{grid-template-columns:1fr}.divider{height:1px}.side.b{text-align:left}}
+
+  /* docs */
+  .docs{display:grid;grid-template-columns:230px 1fr;border:1px solid var(--line)}
+  .docs .toc{border-right:1px solid var(--line);padding:26px 22px;background:var(--paper-2)}
+  .docs .toc .g{font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;color:var(--ink-soft);text-transform:uppercase;margin:0 0 12px}
+  .docs .toc a{display:block;padding:7px 0;font-size:.94rem;color:var(--ink-soft);border-bottom:1px solid transparent}
+  .docs .toc a.on{color:var(--ink);font-weight:600}
+  .docs .toc a:hover{color:var(--ink)}
+  .docs .body{padding:30px 30px}
+  .docs .body h4{font-size:1.3rem;font-weight:600;letter-spacing:-.01em;margin-bottom:8px}
+  .docs .body p{color:var(--ink-soft);margin-bottom:18px;max-width:60ch}
+  .code{background:var(--ink);color:#E9E4D6;font-family:var(--mono);font-size:.82rem;line-height:1.7;padding:18px 20px;overflow-x:auto;border:1px solid var(--ink)}
+  .code .k{color:var(--signal)}
+  .code .c{color:#9a948a}
+  @media(max-width:720px){.docs{grid-template-columns:1fr}.docs .toc{border-right:0;border-bottom:1px solid var(--line)}}
+
+  /* download */
+  .download{text-align:center;border-top:1px solid var(--line)}
+  .download h2{font-size:clamp(2rem,6vw,3.6rem);letter-spacing:-.03em;font-weight:700;line-height:1;max-width:16ch;margin:0 auto}
+  .download h2 em{font-style:normal;color:var(--signal)}
+  .specs{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:30px 0 28px}
+  .chip{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);padding:8px 12px;color:var(--ink-soft)}
+  .chip b{color:var(--ink)}
+
+  /* footer */
+  footer{background:var(--ink);color:var(--paper);padding:clamp(56px,8vw,96px) 0 40px}
+  .fmark{font-size:clamp(3rem,13vw,9rem);font-weight:700;letter-spacing:-.04em;line-height:.9}
+  .fmark em{font-style:normal;color:var(--signal)}
+  .fgrid{display:flex;justify-content:space-between;flex-wrap:wrap;gap:30px;margin-top:48px;padding-top:28px;border-top:1px solid #26241d}
+  .fcol .g{font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;color:#8a857a;text-transform:uppercase;margin-bottom:14px}
+  .fcol a{display:block;color:#cfc9bb;padding:5px 0;font-size:.95rem}
+  .fcol a:hover{color:var(--signal)}
+  .colophon{margin-top:40px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;color:#79746a;font-family:var(--mono);font-size:.68rem;letter-spacing:.05em;text-transform:uppercase}
+  .colophon .priv{color:var(--signal)}
+
+  [data-reveal]{opacity:0;transform:translateY(16px);transition:opacity .7s ease,transform .7s ease}
+  [data-reveal].in{opacity:1;transform:none}
+  @media(max-width:860px){.pillars{grid-template-columns:1fr}.pillar{border-right:0;border-bottom:1px solid var(--line)}.pillar:last-child{border-bottom:0}.nav-links .hideable{display:none}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}[data-reveal]{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top"><span class="sig" aria-hidden="true"><i></i><i></i><i></i><i></i></span>WhatYouSay</a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#why" class="hideable">Why</a>
+      <a href="#how" class="hideable">How it works</a>
+      <a href="#docs">Docs</a>
+      <a class="btn signal sm" href="#get">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <!-- HERO -->
+  <div class="hero">
+    <div class="wrap hero-in">
+      <div class="eyebrow mono"><span>On-device</span><span>·</span><span>Voice + Text</span><span>·</span><b>No signal required</b></div>
+      <h1>Translation that works in the <em>deadzone</em>.</h1>
+
+      <div class="live" aria-hidden="true">
+        <div class="live-top mono"><span class="dot"><b></b> Translating · on device</span><span id="liveTag">EN → ES</span></div>
+        <div class="live-body">
+          <div class="live-src">"Where is the station?"</div>
+          <div class="live-out" id="liveOut">
+            <span class="lc" id="liveCode">ES</span>
+            <span class="lt" id="liveText">¿Dónde está la estación?</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="sub">Speech in, speech out, <b>fully on your phone.</b> Nothing you say ever leaves the device. Works with a weak signal. Works with none.</p>
+
+      <div class="cta">
+        <a class="btn signal" href="#get">Download for Android</a>
+        <a class="btn ghost" href="#docs">Read the docs</a>
+      </div>
+
+      <div class="proof" id="proof">
+        <div class="ptext">Don't trust it? <strong>Cut the network and watch.</strong> The translation above never stops, because nothing up there needs the internet.</div>
+        <button class="toggle" id="apToggle" aria-pressed="false" aria-label="Toggle airplane mode demo">
+          <span class="signal-state"><span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span id="apState">Online</span></span>
+          <span class="switch" aria-hidden="true"><i></i></span>
+          <span class="lbl">Airplane</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- WHY -->
+  <section id="why">
+    <div class="wrap">
+      <div class="shead" data-reveal>
+        <span class="snum">01</span>
+        <div><div class="stitle">Not another offline pack bolted onto a cloud app.</div></div>
+      </div>
+      <div class="pillars" data-reveal>
+        <div class="pillar">
+          <div class="pn">A</div>
+          <h3>Nothing leaves.</h3>
+          <p>Private by construction, not by privacy policy. There is no network code in the translation path. The only thing this app ever downloads is the models, once, on wifi, when you ask.</p>
+        </div>
+        <div class="pillar">
+          <div class="pn">B</div>
+          <h3>A conversation, not a search box.</h3>
+          <p>Put the phone between two people. It hears who is speaking and which language, then answers in the other. Nobody taps a language picker mid-sentence.</p>
+        </div>
+        <div class="pillar">
+          <div class="pn">C</div>
+          <h3>Built for the dead zone.</h3>
+          <p>Subways, borders, basements, back-country, seat 30A at altitude. Where every other translator goes blank, this one keeps talking.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW -->
+  <section id="how">
+    <div class="wrap">
+      <div class="shead" data-reveal>
+        <span class="snum">02</span>
+        <div>
+          <div class="stitle">The whole pipeline fits on the phone.</div>
+          <p class="lead">Three stages, all local. Open models running on your hardware, swappable like cartridges.</p>
+        </div>
+      </div>
+
+      <div class="pipe" data-reveal>
+        <div class="stage"><div class="sk">In</div><h4>You speak</h4><div class="mdl">mic · VAD</div><span class="arrow"></span></div>
+        <div class="stage"><div class="sk">Transcribe</div><h4>Speech to text</h4><div class="mdl">whisper.cpp</div><span class="arrow"></span></div>
+        <div class="stage"><div class="sk">Translate</div><h4>Text to text</h4><div class="mdl">Hunyuan Hy-MT2 · 440MB</div><span class="arrow"></span></div>
+        <div class="stage"><div class="sk">Speak</div><h4>Text to speech</h4><div class="mdl">Piper</div></div>
+      </div>
+
+      <div class="noserver" data-reveal><span class="x mono">[ Missing ]</span><span class="lead" style="margin:0">Notice what is not in this diagram: a server. That is the entire point.</span></div>
+      <p class="swap" data-reveal>Need a language Hy-MT2 doesn't cover? Drop in the <code>NLLB-200</code> pack for 200+. Want flagship quality? <code>TranslateGemma</code> with NPU acceleration. The model is disposable. The privacy is not.</p>
+    </div>
+  </section>
+
+  <!-- CONVERSATION -->
+  <section id="convo">
+    <div class="wrap">
+      <div class="shead" data-reveal>
+        <span class="snum">03</span>
+        <div><div class="stitle">One phone. Two people. No shared language.</div></div>
+      </div>
+      <div class="convo" data-reveal>
+        <div class="side a">
+          <div class="who"><span>Speaker A</span><span>EN</span></div>
+          <div class="said">"Can you help me find the pharmacy?"</div>
+          <div class="heard">heard · translated · spoken aloud in Portuguese</div>
+        </div>
+        <div class="divider" aria-hidden="true"></div>
+        <div class="side b">
+          <div class="who"><span>PT</span><span>Speaker B</span></div>
+          <div class="said">"Claro, fica logo ali à direita."</div>
+          <div class="heard">heard · translated · spoken aloud in English</div>
+        </div>
+      </div>
+      <p class="swap" data-reveal>It flips direction on its own. You just talk.</p>
+    </div>
+  </section>
+
+  <!-- DOCS -->
+  <section id="docs">
+    <div class="wrap">
+      <div class="shead" data-reveal>
+        <span class="snum">04</span>
+        <div>
+          <div class="stitle">Everything, documented.</div>
+          <p class="lead">The product, the model packs, and the build all live here. White-label ready for partners who want to ship it as their own.</p>
+        </div>
+      </div>
+      <div class="docs" data-reveal>
+        <nav class="toc" aria-label="Docs">
+          <p class="g">Start</p>
+          <a class="on" href="#docs">Quickstart</a>
+          <a href="#docs">Install the APK</a>
+          <a href="#docs">Conversation mode</a>
+          <p class="g" style="margin-top:20px">Build</p>
+          <a href="#docs">Model packs</a>
+          <a href="#docs">Swap a model</a>
+          <a href="#docs">White-label</a>
+        </nav>
+        <div class="body">
+          <h4>Quickstart</h4>
+          <p>Install, pick your two languages, and start talking. First launch pulls the model pack matched to your device. After that, the network is never touched again.</p>
+          <div class="code"><span class="c"># the app ships with a stub pipeline, then pulls real models on first run</span><br>whatyousay pull <span class="k">hy-mt2</span> whisper-small piper<br>whatyousay run <span class="k">--offline</span> <span class="c"># prove it: no network, full pipeline</span></div>
+          <p style="margin-top:18px">Models are verified by hash before they are trusted, and stored in app-private space. You can swap the translation engine without touching the app.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOWNLOAD -->
+  <section id="get" class="download">
+    <div class="wrap">
+      <h2 data-reveal>Get it. Then lose signal <em>on purpose.</em></h2>
+      <div class="specs" data-reveal>
+        <span class="chip"><b>Android</b> · 8.0+</span>
+        <span class="chip"><b>~600MB</b> with models</span>
+        <span class="chip"><b>v0.1</b> · open source</span>
+        <span class="chip">No account · no trackers</span>
+      </div>
+      <div class="cta" style="justify-content:center" data-reveal>
+        <a class="btn signal" href="#">Download the APK</a>
+        <a class="btn ghost" href="https://github.com/JoeProAI">View on GitHub</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="fmark">what you <em>say?</em></div>
+    <div class="fgrid">
+      <div class="fcol">
+        <p class="g">Product</p>
+        <a href="#why">Why it's different</a>
+        <a href="#how">How it works</a>
+        <a href="#convo">Conversation mode</a>
+        <a href="#get">Download</a>
+      </div>
+      <div class="fcol">
+        <p class="g">Docs</p>
+        <a href="#docs">Quickstart</a>
+        <a href="#docs">Model packs</a>
+        <a href="#docs">White-label</a>
+      </div>
+      <div class="fcol">
+        <p class="g">Build</p>
+        <a href="https://github.com/JoeProAI">GitHub</a>
+        <a href="#docs">Open models</a>
+        <a href="#docs">Privacy</a>
+      </div>
+    </div>
+    <div class="colophon">
+      <span>WhatYouSay · whatyousay.ai · on-device translation</span>
+      <span class="priv">No trackers on this page either.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Self-translating hero
+  var phrases = [
+    {code:'ES', tag:'EN → ES', dir:'ltr', text:'¿Dónde está la estación?'},
+    {code:'FR', tag:'EN → FR', dir:'ltr', text:'Où est la gare ?'},
+    {code:'DE', tag:'EN → DE', dir:'ltr', text:'Wo ist der Bahnhof?'},
+    {code:'JA', tag:'EN → JA', dir:'ltr', text:'駅はどこですか？'},
+    {code:'ZH', tag:'EN → ZH', dir:'ltr', text:'车站在哪里？'},
+    {code:'AR', tag:'EN → AR', dir:'rtl', text:'أين المحطة؟'},
+    {code:'RU', tag:'EN → RU', dir:'ltr', text:'Где вокзал?'}
+  ];
+  var i=0, out=document.getElementById('liveOut'), lt=document.getElementById('liveText'),
+      lc=document.getElementById('liveCode'), tag=document.getElementById('liveTag');
+  function render(p){ lt.textContent=p.text; lc.textContent=p.code; tag.textContent=p.tag; lt.setAttribute('dir',p.dir); }
+  function tick(){
+    i=(i+1)%phrases.length; var p=phrases[i];
+    if(reduce){ render(p); return; }
+    out.style.opacity=0; out.style.transform='translateY(6px)';
+    setTimeout(function(){ render(p); out.style.opacity=1; out.style.transform='none'; },360);
+  }
+  render(phrases[0]);
+  if(!reduce) setInterval(tick, 2600);
+
+  // Airplane-mode proof
+  var t=document.getElementById('apToggle'), st=document.getElementById('apState'),
+      proof=document.getElementById('proof'), top=document.getElementById('topbar');
+  top.classList.add('live');
+  t.addEventListener('click', function(){
+    var on = t.getAttribute('aria-pressed')==='true';
+    t.setAttribute('aria-pressed', String(!on));
+    if(!on){ proof.classList.add('offline'); st.textContent='No signal'; top.classList.remove('live');
+      proof.querySelector('.ptext').innerHTML='<strong>Network off. Still translating.</strong> The hero above didn’t even flinch. That’s the whole product.';
+    } else { proof.classList.remove('offline'); st.textContent='Online'; top.classList.add('live');
+      proof.querySelector('.ptext').innerHTML='Don’t trust it? <strong>Cut the network and watch.</strong> The translation above never stops, because nothing up there needs the internet.';
+    }
+  });
+
+  // Scroll reveal
+  if(!reduce && 'IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.16});
+    document.querySelectorAll('[data-reveal]').forEach(function(el){io.observe(el);});
+  } else { document.querySelectorAll('[data-reveal]').forEach(function(el){el.classList.add('in');}); }
+})();
+</script>
+</body>
+</html>

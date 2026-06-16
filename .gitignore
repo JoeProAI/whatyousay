@@ -1,0 +1,17 @@
+# Android / Gradle
+.gradle/
+build/
+/local.properties
+.idea/
+*.iml
+captures/
+.cxx/
+
+# Model packs and native libs are downloaded/built, never committed
+*.gguf
+*.onnx
+*.task
+app/src/main/jniLibs/
+app/src/main/assets/models/
+
+.DS_Store
