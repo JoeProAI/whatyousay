@@ -13,7 +13,7 @@ type RevealProps = {
 export function Reveal({ children, delay = 0, y = 22, className }: RevealProps) {
   return (
     <motion.div
-      className={className}
+      className={className ? `reveal ${className}` : "reveal"}
       initial={{ opacity: 0, y }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.2 }}
