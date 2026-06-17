@@ -49,7 +49,7 @@ export default function Page() {
           <div className="grid items-stretch gap-0 lg:grid-cols-[1.05fr_0.95fr] lg:border lg:border-line">
             <div className="relative min-h-[340px] overflow-hidden border border-line lg:border-0 lg:border-r">
               <Image
-                src="/renders/nothing-leaves.png"
+                src="/renders/nothing-leaves.webp"
                 alt="A phone holding its sound waves inside its own frame, network signal crossed out"
                 fill
                 sizes="(max-width: 1024px) 100vw, 50vw"
@@ -77,7 +77,7 @@ export default function Page() {
       <section id="how" className="relative border-t border-line bg-ink text-paper">
         <div className="relative h-[clamp(280px,38vw,520px)] w-full overflow-hidden">
           <Image
-            src="/renders/pipeline.png"
+            src="/renders/pipeline.webp"
             alt="Constructivist diagram: ear and microphone, transforming gears, mouth and speaker"
             fill
             sizes="100vw"
@@ -137,7 +137,7 @@ export default function Page() {
           <div className="grid items-center gap-10 lg:grid-cols-[0.9fr_1.1fr]">
             <Reveal className="relative aspect-square overflow-hidden border border-line">
               <Image
-                src="/renders/anywhere.png"
+                src="/renders/anywhere.webp"
                 alt="A faceted globe with off-grid regions still pinned, network signal crossed out"
                 fill
                 sizes="(max-width: 1024px) 100vw, 45vw"

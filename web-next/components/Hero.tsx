@@ -49,7 +49,7 @@ export function Hero() {
         className="absolute inset-0 z-0"
       >
         <Image
-          src="/renders/hero.png"
+          src="/renders/hero.webp"
           alt="A traveler in a signal-dead valley, their phone fanning spoken words into translated glyphs"
           fill
           priority
