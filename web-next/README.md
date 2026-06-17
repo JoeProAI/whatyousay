@@ -50,8 +50,26 @@ Optional: `WAITLIST_COLLECTION` (Firestore collection name, default `waitlist`).
 
 ### Convex setup
 
-Create an HTTP action that accepts `{ email, source }` and inserts it, then set its URL as
-`CONVEX_WAITLIST_URL`.
+The Convex backend lives in `convex/`:
+
+- `schema.ts` — a `waitlist` table (`email`, `source`, `createdAt`) indexed by email.
+- `waitlist.ts` — `add`, an internal mutation that inserts a signup (deduped by email).
+- `http.ts` — a `POST /waitlist` HTTP action that validates `{ email, source }` and runs the mutation.
+
+Deploy it and wire the env var:
+
+1. Generate a deploy key in the Convex dashboard (Deployment Settings -> Deploy Keys).
+2. Deploy the functions from this directory:
+
+   ```
+   CONVEX_DEPLOY_KEY=<key> npx convex deploy
+   ```
+
+3. Set `CONVEX_WAITLIST_URL` in Vercel to the deployment's HTTP Actions URL plus `/waitlist`,
+   e.g. `https://<deployment>.convex.site/waitlist`.
+
+The `convex/` directory is excluded from the Next build (`tsconfig.json`); Convex type-checks it
+with its own `convex/tsconfig.json` at deploy time.
 
 ## Deploy on Vercel
 
