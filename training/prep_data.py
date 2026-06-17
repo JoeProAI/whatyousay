@@ -26,23 +26,27 @@ from config import CFG, PIVOT, TARGETS, lang_name, translation_prompt
 
 random.seed(CFG.seed)
 
+# ISO 639-1 (app codes) -> ISO 639-3, which Tatoeba_mt uses for config + lang fields.
+ISO3 = {
+    "en": "eng", "es": "spa", "fr": "fra", "de": "deu", "it": "ita",
+    "pt": "por", "zh": "cmn", "ja": "jpn", "ko": "kor", "ar": "ara",
+    "ru": "rus", "hi": "hin", "tr": "tur", "vi": "vie", "th": "tha",
+    "uk": "ukr",
+}
+
 
 def _pair_config(a: str, b: str) -> str:
     """Tatoeba_mt config names are sorted, hyphen-joined ISO codes, e.g. 'eng-spa'."""
-    iso3 = {
-        "en": "eng", "es": "spa", "fr": "fra", "de": "deu", "it": "ita",
-        "pt": "por", "zh": "cmn", "ja": "jpn", "ko": "kor", "ar": "ara",
-        "ru": "rus", "hi": "hin", "tr": "tur", "vi": "vie", "th": "tha",
-        "uk": "ukr",
-    }
-    x, y = sorted([iso3[a], iso3[b]])
+    x, y = sorted([ISO3[a], ISO3[b]])
     return f"{x}-{y}"
 
 
 def _load_pair(src: str, tgt: str) -> list[tuple[str, str]]:
     """Return (src_text, tgt_text) tuples for a directed pair, best-effort."""
     cfg = _pair_config(src, tgt)
+    src3, tgt3 = ISO3[src], ISO3[tgt]
     rows: list[tuple[str, str]] = []
+    skipped = 0
     for split in ("test", "validation", "train"):
         try:
             ds = load_dataset("Helsinki-NLP/tatoeba_mt", cfg, split=split)
@@ -56,13 +60,20 @@ def _load_pair(src: str, tgt: str) -> list[tuple[str, str]]:
             t_text = (row.get("targetString") or "").strip()
             if not s_text or not t_text:
                 continue
-            # Orient so the tuple is (src_lang_text, tgt_lang_text).
-            if s_lang.startswith(_pair_config(src, src).split("-")[0]):
+            # Orient to (src_lang_text, tgt_lang_text) by matching sourceLang against
+            # the known endpoint codes (ISO 639-3 or the 2-letter app code). Do not
+            # guess on an unrecognized value: a wrong swap silently degrades training,
+            # so skip the row and surface it in the count instead.
+            if s_lang.startswith(src3) or s_lang == src:
                 rows.append((s_text, t_text))
-            else:
+            elif s_lang.startswith(tgt3) or s_lang == tgt:
                 rows.append((t_text, s_text))
+            else:
+                skipped += 1
         if rows:
             break
+    if skipped:
+        print(f"  [warn] {cfg}: skipped {skipped} rows with unrecognized sourceLang")
     return rows
 
 

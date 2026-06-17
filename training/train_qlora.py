@@ -75,6 +75,10 @@ def main() -> None:
             num_train_epochs=CFG.epochs,
             learning_rate=CFG.learning_rate,
             logging_steps=10,
+            # Evaluate on the held-out val set at each epoch end; without an
+            # explicit strategy the eval_dataset above is silently ignored.
+            eval_strategy="epoch",
+            per_device_eval_batch_size=CFG.batch_size,
             optim="adamw_8bit",
             weight_decay=0.01,
             lr_scheduler_type="linear",
