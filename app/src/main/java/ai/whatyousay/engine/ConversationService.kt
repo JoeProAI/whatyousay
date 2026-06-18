@@ -19,6 +19,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -40,6 +43,10 @@ class ConversationService : Service() {
     private var capture: AudioCapture? = null
     private val player = AudioPlayer()
 
+    // Serializes start/stop so a redelivered or repeated start intent cannot run two
+    // capture loops at once: each (re)start tears the previous capture down first.
+    private val controlMutex = Mutex()
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -52,15 +59,27 @@ class ConversationService : Service() {
         }
 
         val pair = pairFrom(intent)
-        scope.launch { startConversation(pair) }
+        scope.launch { restart(pair) }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        // Cancel first so any in-flight (re)start aborts and releases the lock, then block
+        // briefly until the active capture has fully released the mic and VAD. cancelAndJoin
+        // inside teardown still awaits the capture coroutine's release after the cancel.
+        scope.cancel()
+        runBlocking { controlMutex.withLock { teardownCapture() } }
+        super.onDestroy()
+    }
+
+    private suspend fun restart(pair: LanguagePair) = controlMutex.withLock {
+        teardownCapture()
+        startConversation(pair)
+    }
+
+    private suspend fun teardownCapture() {
         capture?.stop()
         capture = null
-        scope.cancel()
-        super.onDestroy()
     }
 
     private suspend fun startConversation(pair: LanguagePair) {
