@@ -14,4 +14,7 @@ captures/
 app/src/main/jniLibs/
 app/src/main/assets/models/
 
+# Vendored prebuilt AARs (e.g. sherpa-onnx), built locally, never committed
+app/libs/*.aar
+
 .DS_Store

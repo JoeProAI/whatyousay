@@ -1,24 +1,44 @@
 package ai.whatyousay.engine
 
+import ai.whatyousay.core.ConversationEngine
+import ai.whatyousay.core.LanguagePair
+import ai.whatyousay.core.Languages
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Foreground service that owns the microphone during hands-free conversation mode.
  *
- * Android requires a foreground service with a microphone type for continuous
- * capture while the screen is off or backgrounded. The audio loop (AudioRecord +
- * VAD) runs here and feeds the ConversationEngine. This skeleton wires the
- * lifecycle and the required notification; the capture loop attaches in Phase 1.
+ * Android requires a foreground service with a microphone type for continuous capture
+ * while the screen is off or backgrounded. The service builds the pipeline from
+ * whatever models are installed (PipelineFactory), then runs the capture loop:
+ * mic -> VAD segment -> transcribe -> translate -> synthesize -> play, looping back to
+ * listening. With no native voice engine present it stays in the foreground but does
+ * not capture, since segmenting speech needs the on-device VAD; the UI uses typed
+ * input on the stub path. Nothing here touches the network.
  */
 class ConversationService : Service() {
+
+    private val scope = CoroutineScope(SupervisorJob())
+    private val busy = AtomicBoolean(false)
+    private var capture: AudioCapture? = null
+    private val player = AudioPlayer()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -30,7 +50,74 @@ class ConversationService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+
+        val pair = pairFrom(intent)
+        scope.launch { startConversation(pair) }
         return START_STICKY
+    }
+
+    override fun onDestroy() {
+        capture?.stop()
+        capture = null
+        scope.cancel()
+        super.onDestroy()
+    }
+
+    private suspend fun startConversation(pair: LanguagePair) {
+        val modelRoot = File(filesDir, "models")
+        val manager = FileModelManager(modelRoot)
+        val tier = tierFor(totalRamBytes(), hasNpu = false)
+        val voiceFactory = NativeVoiceEngines.load()
+
+        val resolution = PipelineFactory.resolve(modelRoot, manager, tier, language = "", voiceFactory = voiceFactory)
+        val pipeline = resolution.pipeline
+        val engine = ConversationEngine(pair).apply { start() }
+
+        val vadModel = File(modelRoot, "vad/silero_vad.onnx")
+        if (voiceFactory == null || !vadModel.isFile) {
+            Log.i(TAG, "No on-device voice engine or VAD model; staying idle (UI uses typed input).")
+            return
+        }
+
+        val vad = voiceFactory.createVad(vadModel)
+        capture = AudioCapture(vad).also { loop ->
+            loop.start(scope) { samples -> onSegment(samples, engine, pipeline) }
+        }
+    }
+
+    private suspend fun onSegment(
+        samples: ShortArray,
+        engine: ConversationEngine,
+        pipeline: ai.whatyousay.core.TranslationPipeline,
+    ) {
+        if (!busy.compareAndSet(false, true)) return // drop overlapping segments while speaking
+        try {
+            val heard = pipeline.transcriber.transcribe(samples, AudioCapture.SAMPLE_RATE, hint = null)
+            if (heard.text.isBlank()) return
+            val direction = engine.directionFor(heard.text, heard.language) ?: return
+            val result = pipeline.translator.translate(heard.text, direction)
+            engine.commit(result)
+            val pcm = pipeline.synthesizer.synthesize(result.translatedText, direction.target, AudioCapture.SAMPLE_RATE)
+            player.play(pcm, AudioCapture.SAMPLE_RATE)
+            engine.ready()
+        } catch (e: Exception) {
+            Log.w(TAG, "Conversation turn failed", e)
+        } finally {
+            busy.set(false)
+        }
+    }
+
+    private fun pairFrom(intent: Intent?): LanguagePair {
+        val source = Languages.byCode(intent?.getStringExtra(EXTRA_SOURCE) ?: "en") ?: Languages.EN
+        val target = Languages.byCode(intent?.getStringExtra(EXTRA_TARGET) ?: "es") ?: Languages.ES
+        return LanguagePair(source, target)
+    }
+
+    private fun totalRamBytes(): Long {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val info = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        return info.totalMem
     }
 
     private fun buildNotification(): Notification =
@@ -53,7 +140,10 @@ class ConversationService : Service() {
     }
 
     companion object {
+        private const val TAG = "ConversationService"
         private const val CHANNEL_ID = "conversation"
         private const val NOTIFICATION_ID = 1
+        const val EXTRA_SOURCE = "source_lang"
+        const val EXTRA_TARGET = "target_lang"
     }
 }
