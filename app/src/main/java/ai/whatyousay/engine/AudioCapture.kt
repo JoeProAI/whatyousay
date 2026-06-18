@@ -5,6 +5,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -28,6 +29,10 @@ import kotlinx.coroutines.withContext
  * the read loop. [stop] suspends until that teardown has finished, and [close]s the VAD
  * so its native sherpa-onnx resources are not leaked across start/stop cycles. The VAD
  * is single-use: a fresh AudioCapture (with a fresh VAD) is built for each conversation.
+ *
+ * The loop is launched [CoroutineStart.ATOMIC] so that, even when [start] is reached on a
+ * scope that has already been cancelled (a race against service shutdown), the body still
+ * runs to its finally and releases the recorder and VAD instead of leaking them.
  */
 class AudioCapture(private val vad: VoiceActivityDetector) {
 
@@ -52,7 +57,7 @@ class AudioCapture(private val vad: VoiceActivityDetector) {
             return
         }
         recorder.startRecording()
-        job = scope.launch(Dispatchers.Default) {
+        job = scope.launch(Dispatchers.Default, start = CoroutineStart.ATOMIC) {
             val buf = ShortArray(READ_CHUNK)
             val floats = FloatArray(READ_CHUNK)
             try {

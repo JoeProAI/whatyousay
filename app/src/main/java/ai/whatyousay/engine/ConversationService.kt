@@ -18,6 +18,8 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -64,11 +66,16 @@ class ConversationService : Service() {
     }
 
     override fun onDestroy() {
-        // Cancel first so any in-flight (re)start aborts and releases the lock, then block
-        // briefly until the active capture has fully released the mic and VAD. cancelAndJoin
-        // inside teardown still awaits the capture coroutine's release after the cancel.
+        // Cancel first: this aborts an in-flight (re)start at its ensureActive checkpoint
+        // before it can start the mic, and cancels the running capture loop. We then await
+        // only that loop's release (cancelAndJoin -> its NonCancellable finally), without
+        // taking controlMutex: a restart that is mid model-load holds the lock, and blocking
+        // the main thread on it would risk an ANR. Reading [capture] here is a plain
+        // reference read; any capture the race leaves behind is launched ATOMIC, so its
+        // finally still releases the mic and VAD even though we do not join it.
         scope.cancel()
-        runBlocking { controlMutex.withLock { teardownCapture() } }
+        runBlocking { capture?.stop() }
+        capture = null
         super.onDestroy()
     }
 
@@ -97,6 +104,11 @@ class ConversationService : Service() {
             Log.i(TAG, "No on-device voice engine or VAD model; staying idle (UI uses typed input).")
             return
         }
+
+        // Bail out if the service was destroyed (or a newer start arrived) while the models
+        // above were loading, so we never open the mic for a conversation that is already
+        // being torn down. PipelineFactory.resolve has no suspension points of its own.
+        currentCoroutineContext().ensureActive()
 
         val vad = voiceFactory.createVad(vadModel)
         capture = AudioCapture(vad).also { loop ->
