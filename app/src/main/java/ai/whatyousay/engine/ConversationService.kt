@@ -3,6 +3,7 @@ package ai.whatyousay.engine
 import ai.whatyousay.core.ConversationEngine
 import ai.whatyousay.core.LanguagePair
 import ai.whatyousay.core.Languages
+import ai.whatyousay.core.TranslationPipeline
 import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
@@ -43,6 +44,7 @@ class ConversationService : Service() {
     private val scope = CoroutineScope(SupervisorJob())
     private val busy = AtomicBoolean(false)
     private var capture: AudioCapture? = null
+    private var pipeline: TranslationPipeline? = null
     private val player = AudioPlayer()
 
     // Serializes start/stop so a redelivered or repeated start intent cannot run two
@@ -76,6 +78,12 @@ class ConversationService : Service() {
         scope.cancel()
         runBlocking { capture?.stop() }
         capture = null
+        // The capture loop joined above is the only user of the pipeline, so closing
+        // here frees the MT/STT/TTS native handles rather than abandoning them. A fresh
+        // start racing this teardown closes its own pipeline in startConversation's
+        // finally (it never reaches [installed]), so nothing is left open.
+        pipeline?.close()
+        pipeline = null
         super.onDestroy()
     }
 
@@ -87,6 +95,11 @@ class ConversationService : Service() {
     private suspend fun teardownCapture() {
         capture?.stop()
         capture = null
+        // stop() joined the capture loop, the only caller of onSegment, so no turn is in
+        // flight: closing now releases the previous pipeline's native handles instead of
+        // leaking them across a restart.
+        pipeline?.close()
+        pipeline = null
     }
 
     private suspend fun startConversation(pair: LanguagePair) {
@@ -96,30 +109,39 @@ class ConversationService : Service() {
         val voiceFactory = NativeVoiceEngines.load()
 
         val resolution = PipelineFactory.resolve(modelRoot, manager, tier, language = "", voiceFactory = voiceFactory)
-        val pipeline = resolution.pipeline
-        val engine = ConversationEngine(pair).apply { start() }
+        val built = resolution.pipeline
+        // Until the pipeline is handed to a live capture loop it is owned locally, so any
+        // early return or cancellation below closes it instead of leaking its handles.
+        var installed = false
+        try {
+            val engine = ConversationEngine(pair).apply { start() }
 
-        val vadModel = File(modelRoot, "vad/silero_vad.onnx")
-        if (voiceFactory == null || !vadModel.isFile) {
-            Log.i(TAG, "No on-device voice engine or VAD model; staying idle (UI uses typed input).")
-            return
-        }
+            val vadModel = File(modelRoot, "vad/silero_vad.onnx")
+            if (voiceFactory == null || !vadModel.isFile) {
+                Log.i(TAG, "No on-device voice engine or VAD model; staying idle (UI uses typed input).")
+                return
+            }
 
-        // Bail out if the service was destroyed (or a newer start arrived) while the models
-        // above were loading, so we never open the mic for a conversation that is already
-        // being torn down. PipelineFactory.resolve has no suspension points of its own.
-        currentCoroutineContext().ensureActive()
+            // Bail out if the service was destroyed (or a newer start arrived) while the models
+            // above were loading, so we never open the mic for a conversation that is already
+            // being torn down. PipelineFactory.resolve has no suspension points of its own.
+            currentCoroutineContext().ensureActive()
 
-        val vad = voiceFactory.createVad(vadModel)
-        capture = AudioCapture(vad).also { loop ->
-            loop.start(scope) { samples -> onSegment(samples, engine, pipeline) }
+            val vad = voiceFactory.createVad(vadModel)
+            capture = AudioCapture(vad).also { loop ->
+                loop.start(scope) { samples -> onSegment(samples, engine, built) }
+            }
+            pipeline = built
+            installed = true
+        } finally {
+            if (!installed) built.close()
         }
     }
 
     private suspend fun onSegment(
         samples: ShortArray,
         engine: ConversationEngine,
-        pipeline: ai.whatyousay.core.TranslationPipeline,
+        pipeline: TranslationPipeline,
     ) {
         if (!busy.compareAndSet(false, true)) return // drop overlapping segments while speaking
         try {

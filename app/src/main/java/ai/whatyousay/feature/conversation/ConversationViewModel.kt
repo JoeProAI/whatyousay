@@ -77,4 +77,11 @@ class ConversationViewModel(
             it.copy(status = engine.status, pair = engine.pair, turns = engine.turns, error = null)
         }
     }
+
+    /** Release the pipeline when the screen goes away. The stub holds nothing; a real
+     *  engine swapped in here frees its native handle instead of leaking it. */
+    override fun onCleared() {
+        pipeline.close()
+        super.onCleared()
+    }
 }
