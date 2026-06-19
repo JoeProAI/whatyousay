@@ -18,7 +18,12 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -40,6 +45,10 @@ class ConversationService : Service() {
     private var capture: AudioCapture? = null
     private val player = AudioPlayer()
 
+    // Serializes start/stop so a redelivered or repeated start intent cannot run two
+    // capture loops at once: each (re)start tears the previous capture down first.
+    private val controlMutex = Mutex()
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -52,15 +61,32 @@ class ConversationService : Service() {
         }
 
         val pair = pairFrom(intent)
-        scope.launch { startConversation(pair) }
+        scope.launch { restart(pair) }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        // Cancel first: this aborts an in-flight (re)start at its ensureActive checkpoint
+        // before it can start the mic, and cancels the running capture loop. We then await
+        // only that loop's release (cancelAndJoin -> its NonCancellable finally), without
+        // taking controlMutex: a restart that is mid model-load holds the lock, and blocking
+        // the main thread on it would risk an ANR. Reading [capture] here is a plain
+        // reference read; any capture the race leaves behind is launched ATOMIC, so its
+        // finally still releases the mic and VAD even though we do not join it.
+        scope.cancel()
+        runBlocking { capture?.stop() }
+        capture = null
+        super.onDestroy()
+    }
+
+    private suspend fun restart(pair: LanguagePair) = controlMutex.withLock {
+        teardownCapture()
+        startConversation(pair)
+    }
+
+    private suspend fun teardownCapture() {
         capture?.stop()
         capture = null
-        scope.cancel()
-        super.onDestroy()
     }
 
     private suspend fun startConversation(pair: LanguagePair) {
@@ -78,6 +104,11 @@ class ConversationService : Service() {
             Log.i(TAG, "No on-device voice engine or VAD model; staying idle (UI uses typed input).")
             return
         }
+
+        // Bail out if the service was destroyed (or a newer start arrived) while the models
+        // above were loading, so we never open the mic for a conversation that is already
+        // being torn down. PipelineFactory.resolve has no suspension points of its own.
+        currentCoroutineContext().ensureActive()
 
         val vad = voiceFactory.createVad(vadModel)
         capture = AudioCapture(vad).also { loop ->

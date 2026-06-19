@@ -5,10 +5,14 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Microphone capture loop. Reads 16 kHz mono PCM, runs it through the on-device
@@ -18,10 +22,20 @@ import kotlinx.coroutines.launch
  * Capture only runs when the sherpa-onnx engines are present: segmenting speech needs
  * the on-device VAD. On the stub voice path there is no VAD, so the conversation UI
  * uses typed input instead and this loop is never started. Requires RECORD_AUDIO.
+ *
+ * Lifecycle: the capture coroutine owns the AudioRecord and the VAD. Teardown of both
+ * runs inside the coroutine's finally block under [NonCancellable], on the same thread
+ * that drives the VAD, so the recorder release and the VAD reset/close never race with
+ * the read loop. [stop] suspends until that teardown has finished, and [close]s the VAD
+ * so its native sherpa-onnx resources are not leaked across start/stop cycles. The VAD
+ * is single-use: a fresh AudioCapture (with a fresh VAD) is built for each conversation.
+ *
+ * The loop is launched [CoroutineStart.ATOMIC] so that, even when [start] is reached on a
+ * scope that has already been cancelled (a race against service shutdown), the body still
+ * runs to its finally and releases the recorder and VAD instead of leaking them.
  */
 class AudioCapture(private val vad: VoiceActivityDetector) {
 
-    private var record: AudioRecord? = null
     private var job: Job? = null
 
     @Suppress("MissingPermission")
@@ -39,11 +53,11 @@ class AudioCapture(private val vad: VoiceActivityDetector) {
         if (recorder.state != AudioRecord.STATE_INITIALIZED) {
             Log.w(TAG, "AudioRecord failed to initialize")
             recorder.release()
+            vad.close()
             return
         }
-        record = recorder
         recorder.startRecording()
-        job = scope.launch(Dispatchers.Default) {
+        job = scope.launch(Dispatchers.Default, start = CoroutineStart.ATOMIC) {
             val buf = ShortArray(READ_CHUNK)
             val floats = FloatArray(READ_CHUNK)
             try {
@@ -59,20 +73,23 @@ class AudioCapture(private val vad: VoiceActivityDetector) {
                     }
                 }
             } finally {
-                vad.flush()?.let { onSegment(toShort(it)) }
+                // Release on the capture thread, shielded from cancellation, so the
+                // recorder teardown and VAD reset/close cannot race the read loop or
+                // each other. No segment is emitted here: emitting from a torn-down
+                // capture would kick off a translation after stop was requested.
+                withContext(NonCancellable) {
+                    runCatching { recorder.stop() }
+                    recorder.release()
+                    vad.reset()
+                    vad.close()
+                }
             }
         }
     }
 
-    fun stop() {
-        job?.cancel()
+    suspend fun stop() {
+        job?.cancelAndJoin()
         job = null
-        record?.let { recorder ->
-            runCatching { recorder.stop() }
-            recorder.release()
-        }
-        record = null
-        vad.reset()
     }
 
     private fun toShort(samples: FloatArray): ShortArray =
