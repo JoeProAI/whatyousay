@@ -1,5 +1,7 @@
 package ai.whatyousay.engine
 
+import java.util.concurrent.ConcurrentHashMap
+
 /** Lifecycle of a single model pack as the onboarding flow installs it. */
 enum class PackState { ABSENT, QUEUED, DOWNLOADING, VERIFYING, INSTALLED, FAILED }
 
@@ -19,20 +21,29 @@ data class PackStatus(
  * Tracks the install state of a set of packs. Pure and Android-free, so the state
  * transitions the onboarding ViewModel drives are unit tested on the JVM. The
  * ViewModel feeds it progress from the [ModelManager]; this holds no IO of its own.
+ *
+ * Download progress callbacks arrive on a background thread while the main thread
+ * reads and mutates the same plan, so the state map is concurrent and every mutation
+ * is an atomic per-key update.
  */
 class ModelInstallPlan(packs: List<ModelPack>, manager: ModelManager) {
 
     private val order: List<String> = packs.map { it.id }
     private val byId: Map<String, ModelPack> = packs.associateBy { it.id }
-    private val states: MutableMap<String, PackStatus> = packs.associate { pack ->
-        val installed = manager.isInstalled(pack)
-        pack.id to PackStatus(
-            pack = pack,
-            state = if (installed) PackState.INSTALLED else PackState.ABSENT,
-            progress = if (installed) 1f else 0f,
-            sha256 = manager.installedSha(pack),
-        )
-    }.toMutableMap()
+    private val states: ConcurrentHashMap<String, PackStatus> = ConcurrentHashMap<String, PackStatus>().apply {
+        packs.forEach { pack ->
+            val installed = manager.isInstalled(pack)
+            put(
+                pack.id,
+                PackStatus(
+                    pack = pack,
+                    state = if (installed) PackState.INSTALLED else PackState.ABSENT,
+                    progress = if (installed) 1f else 0f,
+                    sha256 = manager.installedSha(pack),
+                ),
+            )
+        }
+    }
 
     fun statuses(): List<PackStatus> = order.mapNotNull { states[it] }
 
@@ -75,7 +86,9 @@ class ModelInstallPlan(packs: List<ModelPack>, manager: ModelManager) {
     val anyInstalled: Boolean get() = states.values.any { it.state == PackState.INSTALLED }
 
     private fun update(packId: String, transform: (PackStatus) -> PackStatus) {
-        val current = states[packId] ?: byId[packId]?.let { PackStatus(it, PackState.ABSENT) } ?: return
-        states[packId] = transform(current)
+        states.compute(packId) { id, current ->
+            val base = current ?: byId[id]?.let { PackStatus(it, PackState.ABSENT) } ?: return@compute null
+            transform(base)
+        }
     }
 }

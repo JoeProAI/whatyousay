@@ -17,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** The first-run steps, in order. */
@@ -93,8 +94,8 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         jobs.values.forEach { it.cancel() }
         jobs.clear()
         plan = ModelInstallPlan(ModelCatalog.defaultsFor(tier), container.modelManager)
-        _state.value = _state.value.copy(selectedTier = tier)
-        emitPlan()
+        _state.update { it.copy(selectedTier = tier) }
+        emitPlan(plan)
     }
 
     fun toggleLanguage(code: String) {
@@ -106,19 +107,22 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     fun downloadPack(packId: String) {
         val pack = ModelCatalog.byId(packId) ?: return
         if (jobs.containsKey(packId)) return
-        plan.queued(packId)
-        emitPlan()
+        // Pin the plan this job reports into, so a tier switch that swaps the plan
+        // mid-download cannot make the background progress callback touch the new one.
+        val activePlan = plan
+        activePlan.queued(packId)
+        emitPlan(activePlan)
         jobs[packId] = viewModelScope.launch {
             val result = container.modelManager.download(pack) { progress ->
-                if (progress < 1f) plan.downloading(packId, progress) else plan.verifying(packId)
-                emitPlan()
+                if (progress < 1f) activePlan.downloading(packId, progress) else activePlan.verifying(packId)
+                emitPlan(activePlan)
             }
             if (result.isSuccess) {
-                plan.installed(packId, container.modelManager.installedSha(pack))
+                activePlan.installed(packId, container.modelManager.installedSha(pack))
             } else {
-                plan.failed(packId, result.exceptionOrNull()?.message ?: "Download failed")
+                activePlan.failed(packId, result.exceptionOrNull()?.message ?: "Download failed")
             }
-            emitPlan()
+            emitPlan(activePlan)
             jobs.remove(packId)
         }
     }
@@ -132,7 +136,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         jobs.remove(packId)?.cancel()
         container.modelManager.remove(pack)
         plan.absent(packId)
-        emitPlan()
+        emitPlan(plan)
     }
 
     fun onMicPermissionResult(granted: Boolean) {
@@ -150,11 +154,14 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         container.settings.onboardingComplete = true
     }
 
-    private fun emitPlan() {
-        _state.value = _state.value.copy(
-            packs = plan.statuses(),
-            overallProgress = plan.overallProgress,
-        )
+    /**
+     * Publish [source]'s status into the UI, ignoring callbacks from a plan that a tier
+     * switch has since replaced. [MutableStateFlow.update] keeps the read-modify-write
+     * atomic across the per-pack download coroutines.
+     */
+    private fun emitPlan(source: ModelInstallPlan) {
+        if (source !== plan) return
+        _state.update { it.copy(packs = source.statuses(), overallProgress = source.overallProgress) }
     }
 
     private fun hasMicPermission(): Boolean =
