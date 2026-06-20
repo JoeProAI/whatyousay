@@ -33,6 +33,12 @@ class FileModelManager(private val rootDir: File) : ModelManager {
     override fun pathFor(pack: ModelPack): String? =
         if (isInstalled(pack)) artifactFile(pack).absolutePath else null
 
+    override fun installedSha(pack: ModelPack): String? {
+        if (!isInstalled(pack)) return null
+        val marker = markerFile(pack)
+        return if (marker.isFile) marker.readText().trim() else null
+    }
+
     override suspend fun download(pack: ModelPack, onProgress: (Float) -> Unit): Result<String> =
         withContext(Dispatchers.IO) {
             if (pack.url.isBlank()) {
