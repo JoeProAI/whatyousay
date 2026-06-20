@@ -25,7 +25,7 @@ class LlamaTranslator private constructor(@Volatile private var handle: Long) : 
             TranslationResult(sourceText = text, translatedText = output, pair = pair)
         }
 
-    fun close() {
+    override fun close() {
         if (handle != 0L) {
             nativeFree(handle)
             handle = 0L

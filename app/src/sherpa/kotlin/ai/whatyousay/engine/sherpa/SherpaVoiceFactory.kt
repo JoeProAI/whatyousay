@@ -86,6 +86,8 @@ internal class SherpaTranscriber(modelDir: File, language: String) : Transcriber
 
     /** Whisper detects language from audio, not text. */
     override fun detectLanguage(text: String): Language? = null
+
+    override fun close() = recognizer.release()
 }
 
 internal class SherpaSynthesizer(modelDir: File) : Synthesizer {
@@ -126,6 +128,8 @@ internal class SherpaSynthesizer(modelDir: File) : Synthesizer {
             val audio = tts.generate(text = text, sid = 0, speed = 1.0f)
             toShort(resample(audio.samples, nativeSampleRate, sampleRate))
         }
+
+    override fun close() = tts.release()
 }
 
 internal class SherpaVad(vadModel: File) : VoiceActivityDetector {
