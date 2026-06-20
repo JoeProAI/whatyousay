@@ -1,87 +1,157 @@
 package ai.whatyousay.feature.conversation
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import ai.whatyousay.core.ConvStatus
-import ai.whatyousay.core.ConversationEngine
+import ai.whatyousay.WhatYouSayApp
+import ai.whatyousay.core.Language
 import ai.whatyousay.core.LanguagePair
 import ai.whatyousay.core.Languages
-import ai.whatyousay.core.TranslationPipeline
-import ai.whatyousay.core.Turn
-import ai.whatyousay.engine.buildStubPipeline
+import ai.whatyousay.engine.AudioTrackSpeaker
+import ai.whatyousay.engine.ConversationController
+import ai.whatyousay.engine.ConversationState
+import ai.whatyousay.engine.EngineReadiness
+import ai.whatyousay.engine.PushToTalkRecorder
+import android.Manifest
+import android.app.Application
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/** What the conversation screen renders: the turn loop state plus screen-local bits. */
 data class ConversationUiState(
-    val status: ConvStatus = ConvStatus.IDLE,
-    val pair: LanguagePair,
-    val turns: List<Turn> = emptyList(),
-    val error: String? = null,
-)
+    val conversation: ConversationState,
+    val availableLanguages: List<Language>,
+    val micGranted: Boolean,
+    val recording: Boolean,
+) {
+    /** Hands-free auto-VAD needs the native voice engine; push-to-talk works without it. */
+    val canHandsFree: Boolean get() = conversation.readiness.stt
+}
 
 /**
- * Drives the ConversationEngine with a pipeline. Defaults to the stub pipeline so
- * the screen runs today; swap in LlamaTranslator + WhisperTranscriber + PiperSynthesizer
- * for Phase 1 without touching the UI.
+ * Drives the [ConversationController] for the screen and owns push-to-talk capture.
+ *
+ * The pipeline comes from the app container, which builds it through PipelineFactory,
+ * so the same screen runs on the stub engines today and on the native engines once
+ * they are installed, with no UI change. Business logic lives in the controller and
+ * the pure ConversationEngine; this class only adapts them to Compose state and the
+ * Android microphone and foreground service.
  */
-class ConversationViewModel(
-    private val pipeline: TranslationPipeline = buildStubPipeline(),
-) : ViewModel() {
+class ConversationViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val engine = ConversationEngine(
-        initialPair = LanguagePair(Languages.EN, Languages.ES),
-        clock = { System.currentTimeMillis() },
+    private val container = (app as WhatYouSayApp).container
+
+    private val resolution = container.resolvePipeline()
+
+    private val controller = ConversationController(
+        pipeline = resolution.pipeline,
+        initialPair = initialPair(),
+        speaker = AudioTrackSpeaker(),
+        readiness = EngineReadiness(resolution.mtReal, resolution.sttReal, resolution.ttsReal),
     )
 
-    private val _state = MutableStateFlow(ConversationUiState(pair = engine.pair))
-    val state: StateFlow<ConversationUiState> = _state.asStateFlow()
+    private val recorder = PushToTalkRecorder()
 
-    fun toggleListening() {
-        if (engine.status == ConvStatus.IDLE) engine.start() else engine.stop()
-        sync()
-    }
+    private val availableLanguages: List<Language> =
+        container.settings.languageCodes
+            .mapNotNull { Languages.byCode(it) }
+            .ifEmpty { Languages.all }
+            .sortedBy { it.name }
+
+    private val micGranted = MutableStateFlow(hasMicPermission())
+    private val recording = MutableStateFlow(false)
+
+    val uiState: StateFlow<ConversationUiState> =
+        combine(controller.state, micGranted, recording) { conv, mic, rec ->
+            ConversationUiState(conv, availableLanguages, mic, rec)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = ConversationUiState(
+                conversation = controller.state.value,
+                availableLanguages = availableLanguages,
+                micGranted = micGranted.value,
+                recording = false,
+            ),
+        )
+
+    fun setSource(language: Language) = updatePair(LanguagePair(language, controller.state.value.pair.target))
+
+    fun setTarget(language: Language) = updatePair(LanguagePair(controller.state.value.pair.source, language))
 
     fun swap() {
-        engine.setPair(engine.pair.swapped())
-        sync()
+        controller.swap()
+        persistPair()
     }
 
-    fun setPair(pair: LanguagePair) {
-        engine.setPair(pair)
-        sync()
+    fun submitText(text: String) {
+        viewModelScope.launch { controller.submitText(text) }
     }
 
-    /**
-     * Demo path: feed text as if it had been transcribed. In Phase 1 the mic loop
-     * calls the same sequence with whisper output, so the flow is identical.
-     */
-    fun submitUtterance(text: String) {
-        val direction = engine.directionFor(text, pipeline.transcriber.detectLanguage(text)) ?: return
-        sync()
+    fun onMicPermissionResult(granted: Boolean) {
+        micGranted.value = granted
+    }
+
+    fun startPushToTalk() {
+        if (!micGranted.value) return
+        recording.value = true
+        controller.startListening()
+        recorder.start(viewModelScope)
+    }
+
+    fun stopPushToTalk() {
+        if (!recording.value) return
+        recording.value = false
         viewModelScope.launch {
-            runCatching { pipeline.translator.translate(text, direction) }
-                .onSuccess {
-                    engine.commit(it)
-                    engine.ready()
-                    sync()
-                }
-                .onFailure { e -> _state.update { it.copy(error = e.message, status = engine.status) } }
+            val pcm = recorder.stop()
+            controller.submitAudio(pcm, hint = controller.state.value.pair.source)
+            controller.stopListening()
         }
     }
 
-    private fun sync() {
-        _state.update {
-            it.copy(status = engine.status, pair = engine.pair, turns = engine.turns, error = null)
+    fun toggleHandsFree() {
+        val current = controller.state.value
+        if (current.handsFree) {
+            container.stopHandsFree()
+            controller.setHandsFree(false)
+        } else {
+            if (!current.readiness.stt || !micGranted.value) return
+            container.startHandsFree(current.pair)
+            controller.setHandsFree(true)
         }
     }
 
-    /** Release the pipeline when the screen goes away. The stub holds nothing; a real
-     *  engine swapped in here frees its native handle instead of leaking it. */
+    fun dismissError() = controller.clearError()
+
+    private fun updatePair(pair: LanguagePair) {
+        controller.setPair(pair)
+        persistPair()
+    }
+
+    private fun persistPair() {
+        val pair = controller.state.value.pair
+        container.settings.sourceCode = pair.source.code
+        container.settings.targetCode = pair.target.code
+    }
+
+    private fun initialPair(): LanguagePair {
+        val source = Languages.byCode(container.settings.sourceCode) ?: Languages.EN
+        val target = Languages.byCode(container.settings.targetCode) ?: Languages.ES
+        return if (source.code == target.code) LanguagePair(Languages.EN, Languages.ES) else LanguagePair(source, target)
+    }
+
+    private fun hasMicPermission(): Boolean =
+        ContextCompat.checkSelfPermission(getApplication(), Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
     override fun onCleared() {
-        pipeline.close()
+        if (controller.state.value.handsFree) container.stopHandsFree()
+        controller.close()
         super.onCleared()
     }
 }

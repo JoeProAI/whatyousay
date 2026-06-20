@@ -16,6 +16,9 @@ interface ModelManager {
     /** Absolute path to the local pack file, or null if not installed. */
     fun pathFor(pack: ModelPack): String?
 
+    /** The sha256 confirmed when the pack was installed, or null if not installed. */
+    fun installedSha(pack: ModelPack): String? = null
+
     /** Fetch a pack over the network (wifi-only by policy). Verifies sha256 on completion. */
     suspend fun download(pack: ModelPack, onProgress: (Float) -> Unit): Result<String>
 
