@@ -1,0 +1,8 @@
+# Datasets, model outputs, and environments are large and machine-local.
+data/
+outputs/
+*.gguf
+*.safetensors
+.venv/
+__pycache__/
+*.pyc

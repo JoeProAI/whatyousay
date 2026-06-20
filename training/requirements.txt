@@ -1,0 +1,25 @@
+# WhatYouSay MT fine-tune dependencies.
+#
+# IMPORTANT: do NOT install torch from here. On an RTX 5080 (Blackwell, sm_120)
+# torch must come from the cu128 build FIRST (see README). Installing torch via a
+# normal pip resolve will pull a cu126 wheel that cannot see the card
+# ("no kernel image available for execution on the device").
+#
+# Install order (see README for the full Blackwell setup):
+#   1. torch (cu128)         <- not in this file, install separately
+#   2. unsloth + unsloth_zoo
+#   3. the rest below
+#
+# After torch(cu128) is in place:  pip install -r requirements.txt
+
+unsloth
+unsloth_zoo
+bitsandbytes
+transformers>=4.53.0
+trl>=0.9.6
+peft>=0.12.0
+accelerate>=0.33.0
+datasets>=2.20.0
+sentencepiece
+protobuf
+sacrebleu>=2.4.0
