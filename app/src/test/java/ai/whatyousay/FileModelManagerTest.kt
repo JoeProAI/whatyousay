@@ -10,9 +10,13 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.file.Files
 import java.security.MessageDigest
+import java.util.zip.GZIPOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class FileModelManagerTest {
 
@@ -29,10 +33,10 @@ class FileModelManagerTest {
         return out.toString()
     }
 
-    private fun pack(id: String, url: String, sha: String) =
+    private fun pack(id: String, url: String, sha: String, stage: Stage = Stage.MT) =
         ModelPack(
             id = id,
-            stage = Stage.MT,
+            stage = stage,
             displayName = id,
             approxBytes = 1_000L,
             languages = listOf("en"),
@@ -41,6 +45,105 @@ class FileModelManagerTest {
             sha256 = sha,
             url = url,
         )
+
+    /** Zip the given entries under a single top-level directory, as the real packs ship. */
+    private fun zipWithRoot(root: String, entries: Map<String, ByteArray>): ByteArray {
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(ZipEntry("$root/"))
+            zip.closeEntry()
+            for ((name, bytes) in entries) {
+                zip.putNextEntry(ZipEntry("$root/$name"))
+                zip.write(bytes)
+                zip.closeEntry()
+            }
+        }
+        return out.toByteArray()
+    }
+
+    /** Minimal ustar tar.gz of flat entries, enough to exercise the untar path. */
+    private fun tarGz(entries: Map<String, ByteArray>): ByteArray {
+        val raw = ByteArrayOutputStream()
+        for ((name, bytes) in entries) {
+            val header = ByteArray(512)
+            fun put(s: String, off: Int, len: Int) {
+                val b = s.toByteArray()
+                System.arraycopy(b, 0, header, off, minOf(b.size, len))
+            }
+            put(name, 0, 100)
+            put("0000644", 100, 8)
+            put("0000000", 108, 8)
+            put("0000000", 116, 8)
+            put(String.format("%011o", bytes.size), 124, 12)
+            put(String.format("%011o", 0), 136, 12)
+            for (i in 148 until 156) header[i] = ' '.code.toByte()
+            header[156] = '0'.code.toByte()
+            put("ustar\u0000", 257, 6)
+            put("00", 263, 2)
+            var sum = 0
+            for (b in header) sum += b.toInt() and 0xff
+            put(String.format("%06o", sum) + "\u0000 ", 148, 8)
+            raw.write(header)
+            raw.write(bytes)
+            val pad = (512 - bytes.size % 512) % 512
+            raw.write(ByteArray(pad))
+        }
+        raw.write(ByteArray(1024))
+        val gz = ByteArrayOutputStream()
+        GZIPOutputStream(gz).use { it.write(raw.toByteArray()) }
+        return gz.toByteArray()
+    }
+
+    @Test
+    fun ingestExtractsZipArchiveAndReportsDirectory() {
+        val files = mapOf(
+            "tiny-encoder.int8.onnx" to ByteArray(64) { it.toByte() },
+            "tiny-tokens.txt" to "a b c".toByteArray(),
+            "espeak-ng-data/phontab" to ByteArray(8) { 9 },
+        )
+        val archive = zipWithRoot("sherpa-onnx-whisper-tiny", files)
+        val mgr = FileModelManager(tempRoot())
+        val p = pack("stt-zip", "https://cdn.example/stt-zip.zip", sha256(archive), Stage.STT)
+
+        val result = mgr.ingest(p, archive.size.toLong(), ByteArrayInputStream(archive)) { }
+
+        assertTrue(result.isSuccess)
+        assertTrue(mgr.isInstalled(p))
+        val dir = File(mgr.pathFor(p)!!)
+        assertTrue(dir.isDirectory)
+        // The single top-level directory is flattened away.
+        assertTrue(File(dir, "tiny-encoder.int8.onnx").isFile)
+        assertTrue(File(dir, "tiny-tokens.txt").isFile)
+        assertTrue(File(dir, "espeak-ng-data/phontab").isFile)
+    }
+
+    @Test
+    fun ingestExtractsTarGzArchive() {
+        val archive = tarGz(mapOf("model.onnx" to ByteArray(40) { it.toByte() }, "tokens.txt" to "x".toByteArray()))
+        val mgr = FileModelManager(tempRoot())
+        val p = pack("tts-tgz", "https://cdn.example/tts-tgz.tar.gz", sha256(archive), Stage.TTS)
+
+        val result = mgr.ingest(p, archive.size.toLong(), ByteArrayInputStream(archive)) { }
+
+        assertTrue(result.isSuccess)
+        val dir = File(mgr.pathFor(p)!!)
+        assertTrue(File(dir, "model.onnx").isFile)
+        assertEquals(40L, File(dir, "model.onnx").length())
+        assertTrue(File(dir, "tokens.txt").isFile)
+    }
+
+    @Test
+    fun ingestRejectsArchiveHashMismatch() {
+        val archive = zipWithRoot("pack", mapOf("f" to ByteArray(16)))
+        val mgr = FileModelManager(tempRoot())
+        val p = pack("stt-bad", "https://cdn.example/stt-bad.zip", "00".repeat(32), Stage.STT)
+
+        val result = mgr.ingest(p, archive.size.toLong(), ByteArrayInputStream(archive)) { }
+
+        assertTrue(result.isFailure)
+        assertFalse(mgr.isInstalled(p))
+        assertNull(mgr.pathFor(p))
+    }
 
     @Test
     fun artifactNameFromUrlElseId() {
