@@ -144,9 +144,16 @@ class FileModelManager(private val rootDir: File) : ModelManager {
     }
 
     override fun verify(pack: ModelPack): Boolean {
+        if (pack.sha256.isBlank()) return false
         val artifact = artifactFile(pack)
-        if (!artifact.isFile || pack.sha256.isBlank()) return false
-        return sha256Of(artifact).equals(pack.sha256, ignoreCase = true)
+        // Single-file packs keep their artifact, so re-hash it. Archive packs delete the
+        // source archive after extraction (the hash was confirmed at download time and
+        // cannot be recomputed from the loose files), so fall back to the marker check.
+        return if (artifact.isFile) {
+            sha256Of(artifact).equals(pack.sha256, ignoreCase = true)
+        } else {
+            isInstalled(pack)
+        }
     }
 
     override fun remove(pack: ModelPack): Boolean =

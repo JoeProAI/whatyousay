@@ -133,6 +133,17 @@ class FileModelManagerTest {
     }
 
     @Test
+    fun verifyPassesForExtractedArchivePack() {
+        val archive = zipWithRoot("pack", mapOf("model.onnx" to ByteArray(32) { it.toByte() }))
+        val mgr = FileModelManager(tempRoot())
+        val p = pack("stt-verify", "https://cdn.example/stt-verify.zip", sha256(archive), Stage.STT)
+
+        assertTrue(mgr.ingest(p, archive.size.toLong(), ByteArrayInputStream(archive)) { }.isSuccess)
+        // The source archive is deleted after extraction, but verify must still pass.
+        assertTrue(mgr.verify(p))
+    }
+
+    @Test
     fun ingestRejectsArchiveHashMismatch() {
         val archive = zipWithRoot("pack", mapOf("f" to ByteArray(16)))
         val mgr = FileModelManager(tempRoot())
