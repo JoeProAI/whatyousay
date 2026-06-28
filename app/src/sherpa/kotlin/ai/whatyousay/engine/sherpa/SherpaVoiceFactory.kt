@@ -59,7 +59,7 @@ internal class SherpaTranscriber(modelDir: File, language: String) : Transcriber
                     language = language,
                     task = "transcribe",
                 ),
-                tokens = File(modelDir, "tokens.txt").absolutePath,
+                tokens = pick(modelDir, "tokens").absolutePath,
                 numThreads = 2,
                 modelType = "whisper",
             ),
@@ -95,7 +95,7 @@ internal class SherpaSynthesizer(modelDir: File) : Synthesizer {
     private val nativeSampleRate: Int
 
     init {
-        val tokens = File(modelDir, "tokens.txt").absolutePath
+        val tokens = pick(modelDir, "tokens").absolutePath
         val dataDir = File(modelDir, "espeak-ng-data").let { if (it.isDirectory) it.absolutePath else "" }
         val voices = File(modelDir, "voices.bin")
         val modelConfig = if (voices.isFile) {

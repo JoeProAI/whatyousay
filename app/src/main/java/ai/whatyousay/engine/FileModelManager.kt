@@ -13,6 +13,11 @@ import java.security.MessageDigest
  * `rootDir`, holding the downloaded artifact plus a `.verified` marker recording the
  * sha256 that was confirmed at download time.
  *
+ * Single-file packs (a GGUF for MT) are stored as-is. Archive packs (`.zip`/`.tar.gz`,
+ * used for the multi-file sherpa-onnx voice models) are extracted into the pack
+ * directory after verification, flattening a single top-level directory so the engines
+ * find their files directly. The sha256 is always computed over the downloaded artifact.
+ *
  * The only network use in the app is [download], which is user-initiated. It streams
  * the artifact to a temporary file while hashing it, refuses to install anything whose
  * hash does not match the manifest, and only then promotes it into place. Everything
@@ -25,13 +30,23 @@ class FileModelManager(private val rootDir: File) : ModelManager {
 
     override fun isInstalled(pack: ModelPack): Boolean {
         val marker = markerFile(pack)
-        if (!marker.isFile || !artifactFile(pack).isFile) return false
+        if (!marker.isFile || !hasContent(pack)) return false
         if (pack.sha256.isBlank()) return true
         return marker.readText().trim().equals(pack.sha256, ignoreCase = true)
     }
 
-    override fun pathFor(pack: ModelPack): String? =
-        if (isInstalled(pack)) artifactFile(pack).absolutePath else null
+    /** A single-file pack keeps its artifact; an archive pack leaves its extracted files. */
+    private fun hasContent(pack: ModelPack): Boolean {
+        if (artifactFile(pack).isFile) return true
+        val files = packDir(pack).listFiles().orEmpty()
+        return files.any { it.name != MARKER && it.name != STAGING }
+    }
+
+    override fun pathFor(pack: ModelPack): String? = when {
+        !isInstalled(pack) -> null
+        artifactFile(pack).isFile -> artifactFile(pack).absolutePath
+        else -> packDir(pack).absolutePath
+    }
 
     override suspend fun download(pack: ModelPack, onProgress: (Float) -> Unit): Result<String> =
         withContext(Dispatchers.IO) {
@@ -96,20 +111,49 @@ class FileModelManager(private val rootDir: File) : ModelManager {
             )
         }
 
+        val installed = if (ArchiveExtractor.isArchive(artifact.name)) {
+            installArchive(pack, part, artifact.name, computed)
+        } else {
+            installFile(pack, part, artifact, computed)
+        }
+        if (installed.isSuccess) onProgress(1f)
+        return installed
+    }
+
+    private fun installFile(pack: ModelPack, part: File, artifact: File, computed: String): Result<String> {
         artifact.delete()
         if (!part.renameTo(artifact)) {
             part.delete()
             return Result.failure(IllegalStateException("could not store ${pack.id}"))
         }
         markerFile(pack).writeText(computed)
-        onProgress(1f)
         return Result.success(artifact.absolutePath)
     }
 
+    private fun installArchive(pack: ModelPack, part: File, archiveName: String, computed: String): Result<String> {
+        val dir = packDir(pack)
+        return try {
+            ArchiveExtractor.extract(part, dir, archiveName)
+            part.delete()
+            markerFile(pack).writeText(computed)
+            Result.success(dir.absolutePath)
+        } catch (e: Exception) {
+            part.delete()
+            Result.failure(e)
+        }
+    }
+
     override fun verify(pack: ModelPack): Boolean {
+        if (pack.sha256.isBlank()) return false
         val artifact = artifactFile(pack)
-        if (!artifact.isFile || pack.sha256.isBlank()) return false
-        return sha256Of(artifact).equals(pack.sha256, ignoreCase = true)
+        // Single-file packs keep their artifact, so re-hash it. Archive packs delete the
+        // source archive after extraction (the hash was confirmed at download time and
+        // cannot be recomputed from the loose files), so fall back to the marker check.
+        return if (artifact.isFile) {
+            sha256Of(artifact).equals(pack.sha256, ignoreCase = true)
+        } else {
+            isInstalled(pack)
+        }
     }
 
     override fun remove(pack: ModelPack): Boolean =
@@ -119,9 +163,12 @@ class FileModelManager(private val rootDir: File) : ModelManager {
 
     private fun artifactFile(pack: ModelPack) = File(packDir(pack), artifactName(pack.url, pack.id))
 
-    private fun markerFile(pack: ModelPack) = File(packDir(pack), ".verified")
+    private fun markerFile(pack: ModelPack) = File(packDir(pack), MARKER)
 
     companion object {
+        private const val MARKER = ".verified"
+        private const val STAGING = ".staging"
+
         /** Derive a stable on-disk file name from the pack url, falling back to the id. */
         fun artifactName(url: String, packId: String): String {
             val tail = url.substringAfterLast('/', "").substringBefore('?').trim()
