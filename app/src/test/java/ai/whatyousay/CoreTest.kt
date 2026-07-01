@@ -64,10 +64,22 @@ class CoreTest {
     fun catalogPicksBestPackThatFits() {
         val lowMt = ModelCatalog.forStage(Stage.MT, DeviceTier.LOW)
         assertNotNull(lowMt)
-        assertTrue(lowMt!!.minTier == DeviceTier.LOW)
+        assertTrue(lowMt!!.minTier.ordinal <= DeviceTier.LOW.ordinal)
 
+        // The chosen pack must be one the tier can run.
         val flagshipMt = ModelCatalog.forStage(Stage.MT, DeviceTier.FLAGSHIP)
-        assertEquals(DeviceTier.FLAGSHIP, flagshipMt!!.minTier)
+        assertNotNull(flagshipMt)
+        assertTrue(flagshipMt!!.minTier.ordinal <= DeviceTier.FLAGSHIP.ordinal)
+    }
+
+    @Test
+    fun catalogPrefersAPublishedPackOverAPlannedUpgrade() {
+        // A MID device can run the planned Hunyuan pack (blank url) and the published
+        // Gemma pack; forStage must pick the one that actually has a url so the stage
+        // gets a real engine instead of silently falling back to the stub.
+        val midMt = ModelCatalog.forStage(Stage.MT, DeviceTier.MID)
+        assertNotNull(midMt)
+        assertTrue(midMt!!.url.isNotBlank())
     }
 
     @Test
