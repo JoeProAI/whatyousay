@@ -45,12 +45,8 @@ class AppContainer(private val appContext: Context) {
         if (packsConfigured) FileModelManager(modelRoot) else SimulatedModelManager()
 
     /** Resolve a pipeline plus which stages are real, for the chosen tier. */
-    fun resolvePipeline(language: String = ""): PipelineFactory.Resolution =
-        PipelineFactory.resolve(modelRoot, modelManager, effectiveTier(), language, voiceFactory)
-
-    /** Rebuild only the STT engine, forced to [language], reusing the loaded translator. */
-    fun buildTranscriber(language: String) =
-        PipelineFactory.buildTranscriber(modelRoot, modelManager, effectiveTier(), language, voiceFactory)
+    fun resolvePipeline(): PipelineFactory.Resolution =
+        PipelineFactory.resolve(modelRoot, modelManager, effectiveTier(), voiceFactory = voiceFactory)
 
     /** The tier the user picked in onboarding, falling back to the detected one. */
     fun effectiveTier(): DeviceTier =

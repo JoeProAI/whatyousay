@@ -2,6 +2,7 @@ package ai.whatyousay
 
 import ai.whatyousay.core.ConvStatus
 import ai.whatyousay.core.ConversationEngine
+import ai.whatyousay.core.LanguageId
 import ai.whatyousay.core.LanguagePair
 import ai.whatyousay.core.Languages
 import ai.whatyousay.core.TranslationResult
@@ -36,6 +37,53 @@ class CoreTest {
     fun blankProducesNoDirection() {
         val e = ConversationEngine(enEs)
         assertNull(e.directionFor("   ", null))
+    }
+
+    private val enFr = LanguagePair(Languages.EN, Languages.FR)
+
+    @Test
+    fun directionFlipsWhenTextIsTargetDespiteWrongDetection() {
+        // Whisper mislabels short French audio as English; the transcript still
+        // reads as French, so the direction must flip to FR->EN anyway.
+        val e = ConversationEngine(enFr)
+        assertEquals(enFr.swapped(), e.directionFor("Bonjour", Languages.EN))
+    }
+
+    @Test
+    fun directionStaysSourceWhenTextIsSourceDespiteWrongDetection() {
+        val e = ConversationEngine(enFr)
+        assertEquals(enFr, e.directionFor("Hello there", Languages.FR))
+    }
+
+    @Test
+    fun directionFallsBackToDetectionWhenTextInconclusive() {
+        val e = ConversationEngine(enFr)
+        assertEquals(enFr.swapped(), e.directionFor("42", Languages.FR))
+        assertEquals(enFr, e.directionFor("42", Languages.EN))
+    }
+
+    @Test
+    fun identifiesLatinLanguagesByFunctionWords() {
+        val enFrList = listOf(Languages.EN, Languages.FR)
+        assertEquals(Languages.FR, LanguageId.identify("Bonjour, comment allez-vous", enFrList))
+        assertEquals(Languages.EN, LanguageId.identify("Where is the station", enFrList))
+        assertEquals(Languages.FR, LanguageId.identify("Où est la gare", enFrList))
+    }
+
+    @Test
+    fun identifiesByAccentWhenWordsTie() {
+        assertEquals(Languages.FR, LanguageId.identify("français", listOf(Languages.EN, Languages.FR)))
+    }
+
+    @Test
+    fun identifiesNonLatinByScript() {
+        assertEquals(Languages.AR, LanguageId.identify("مرحبا", listOf(Languages.FR, Languages.AR)))
+        assertEquals(Languages.RU, LanguageId.identify("привет", listOf(Languages.EN, Languages.RU)))
+    }
+
+    @Test
+    fun returnsNullWhenNoCandidateMatches() {
+        assertNull(LanguageId.identify("42 99", listOf(Languages.EN, Languages.FR)))
     }
 
     @Test

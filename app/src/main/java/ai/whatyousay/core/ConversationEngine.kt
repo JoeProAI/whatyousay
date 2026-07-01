@@ -49,14 +49,19 @@ class ConversationEngine(initialPair: LanguagePair, private val clock: () -> Lon
     /**
      * Decide the translation direction for a finalized utterance.
      *
-     * If the detected language matches the target side, the other person is
-     * speaking, so we translate back toward the source. Otherwise we assume the
-     * source side is talking. Returns null when there is nothing to translate.
+     * Direction hinges on which side actually spoke. Whisper's audio-based guess
+     * ([detected]) is unreliable on short utterances, so we first identify the
+     * language from the transcript itself, constrained to the two languages of the
+     * pair, and only fall back to Whisper's guess when the text is inconclusive.
+     * If the spoken language matches the target side, the other person is talking,
+     * so we translate back toward the source. Otherwise the source side is talking.
+     * Returns null when there is nothing to translate.
      */
     fun directionFor(text: String, detected: Language?): LanguagePair? {
         if (text.isBlank()) return null
         status = ConvStatus.WORKING
-        return if (detected?.code == pair.target.code) pair.swapped() else pair
+        val spoken = LanguageId.identify(text, listOf(pair.source, pair.target)) ?: detected
+        return if (spoken?.code == pair.target.code) pair.swapped() else pair
     }
 
     /** Record a completed translation as a turn and move to speaking. */

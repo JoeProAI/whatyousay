@@ -1,5 +1,7 @@
 package ai.whatyousay.core
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 /** A speech-to-text result. `isFinal` distinguishes streaming partials from the committed transcript. */
 data class Transcription(
     val text: String,
@@ -56,45 +58,21 @@ interface Synthesizer : AutoCloseable {
  * each independently so one stage failing to close cannot leave another's native
  * handle open. Closing a stub pipeline is a no-op.
  *
- * The transcriber can be swapped in place: Whisper is loaded forced to a single
- * source language, so changing the conversation's source rebuilds only the STT
- * engine and leaves the (heavier) translator and synthesizer loaded.
+ * [close] is idempotent: the hands-free service can race a teardown (a coroutine)
+ * against onDestroy (the main thread), and closing a native JNI handle twice would
+ * crash, so only the first close releases the stages.
  */
 class TranslationPipeline(
-    transcriber: Transcriber,
+    val transcriber: Transcriber,
     val translator: Translator,
     val synthesizer: Synthesizer,
 ) : AutoCloseable {
-    private val lock = Any()
-    private var closed = false
-
-    var transcriber: Transcriber = transcriber
-        private set
-
-    /**
-     * Replace the transcriber, releasing the previous one. If the pipeline is already
-     * closed, the incoming engine is released instead of installed, so a rebuild that
-     * lands after teardown cannot leak its native handle.
-     */
-    fun swapTranscriber(next: Transcriber) {
-        synchronized(lock) {
-            if (closed) {
-                runCatching { next.close() }
-                return
-            }
-            val previous = transcriber
-            transcriber = next
-            if (previous !== next) runCatching { previous.close() }
-        }
-    }
+    private val closed = AtomicBoolean(false)
 
     override fun close() {
-        synchronized(lock) {
-            if (closed) return
-            closed = true
-            runCatching { transcriber.close() }
-            runCatching { translator.close() }
-            runCatching { synthesizer.close() }
-        }
+        if (!closed.compareAndSet(false, true)) return
+        runCatching { transcriber.close() }
+        runCatching { translator.close() }
+        runCatching { synthesizer.close() }
     }
 }
