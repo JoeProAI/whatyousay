@@ -143,7 +143,7 @@ export function Hero() {
           >
             <Link
               href="https://github.com/JoeProAI/whatyousay/releases/download/app-v0.1.0/whatyousay-0.1.0.apk"
-              className="label bg-signal px-6 py-4 font-bold text-paper transition-opacity hover:opacity-90"
+              className="label bg-signal px-6 py-4 font-bold text-ink transition-opacity hover:opacity-90"
             >
               Download APK / v0.1.0
             </Link>
