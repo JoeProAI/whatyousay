@@ -59,18 +59,6 @@ object PipelineFactory {
     /** Pack directory follows FileModelManager's layout: one directory per pack id. */
     fun packDir(modelRoot: File, pack: ModelPack): File = File(modelRoot, pack.id)
 
-    /**
-     * Build just the STT engine, forced to [language]. Used to rebuild the transcriber
-     * when the conversation's source language changes without reloading the translator.
-     */
-    fun buildTranscriber(
-        modelRoot: File,
-        manager: ModelManager,
-        tier: DeviceTier,
-        language: String,
-        voiceFactory: VoiceEngineFactory? = NativeVoiceEngines.load(),
-    ): Transcriber? = voiceFactory?.let { loadTranscriber(it, modelRoot, manager, tier, language) }
-
     private fun loadTranslator(manager: ModelManager, tier: DeviceTier): Translator? {
         val pack = ModelCatalog.forStage(Stage.MT, tier) ?: return null
         val path = manager.pathFor(pack) ?: return null

@@ -15,8 +15,6 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,9 +48,10 @@ class ConversationViewModel(app: Application) : AndroidViewModel(app) {
 
     private val startPair = initialPair()
 
-    // Whisper is loaded forced to the source language so it never mis-detects the
-    // spoken language (for example hearing French as Arabic) and poisons the turn.
-    private val resolution = container.resolvePipeline(startPair.source.code)
+    // Whisper auto-detects which of the two selected languages was spoken so a turn can
+    // go either way without the user swapping; the engine constrains the direction to
+    // the chosen pair. See ConversationEngine.directionFor.
+    private val resolution = container.resolvePipeline()
 
     private val controller = ConversationController(
         pipeline = resolution.pipeline,
@@ -84,17 +83,14 @@ class ConversationViewModel(app: Application) : AndroidViewModel(app) {
             ),
         )
 
-    fun setSource(language: Language) {
+    fun setSource(language: Language) =
         updatePair(LanguagePair(language, controller.state.value.pair.target))
-        rebuildTranscriberForSource()
-    }
 
     fun setTarget(language: Language) = updatePair(LanguagePair(controller.state.value.pair.source, language))
 
     fun swap() {
         controller.swap()
         persistPair()
-        rebuildTranscriberForSource()
     }
 
     fun submitText(text: String) {
@@ -140,19 +136,6 @@ class ConversationViewModel(app: Application) : AndroidViewModel(app) {
     private fun updatePair(pair: LanguagePair) {
         controller.setPair(pair)
         persistPair()
-    }
-
-    // Reload Whisper for the new source language so recognition stays locked to what
-    // the speaker actually selected. No-op on the stub build (buildTranscriber is null).
-    // The controller serializes rebuilds and settles on the latest source, so rapid
-    // switches are safe.
-    private fun rebuildTranscriberForSource() {
-        val source = controller.state.value.pair.source.code
-        viewModelScope.launch {
-            controller.rebuildTranscriber {
-                withContext(Dispatchers.Default) { container.buildTranscriber(source) }
-            }
-        }
     }
 
     private fun persistPair() {
