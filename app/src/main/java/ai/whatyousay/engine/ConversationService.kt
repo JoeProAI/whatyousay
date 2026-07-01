@@ -108,7 +108,10 @@ class ConversationService : Service() {
         val tier = tierFor(totalRamBytes(), hasNpu = false)
         val voiceFactory = NativeVoiceEngines.load()
 
-        val resolution = PipelineFactory.resolve(modelRoot, manager, tier, language = "", voiceFactory = voiceFactory)
+        // Force Whisper to the session's source language rather than auto-detecting, which
+        // can mis-identify the spoken language and produce a wrong-language transcript.
+        val resolution =
+            PipelineFactory.resolve(modelRoot, manager, tier, language = pair.source.code, voiceFactory = voiceFactory)
         val built = resolution.pipeline
         // Until the pipeline is handed to a live capture loop it is owned locally, so any
         // early return or cancellation below closes it instead of leaking its handles.

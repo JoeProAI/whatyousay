@@ -15,6 +15,8 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -46,11 +48,15 @@ class ConversationViewModel(app: Application) : AndroidViewModel(app) {
 
     private val container = (app as WhatYouSayApp).container
 
-    private val resolution = container.resolvePipeline()
+    private val startPair = initialPair()
+
+    // Whisper is loaded forced to the source language so it never mis-detects the
+    // spoken language (for example hearing French as Arabic) and poisons the turn.
+    private val resolution = container.resolvePipeline(startPair.source.code)
 
     private val controller = ConversationController(
         pipeline = resolution.pipeline,
-        initialPair = initialPair(),
+        initialPair = startPair,
         speaker = AudioTrackSpeaker(),
         readiness = EngineReadiness(resolution.mtReal, resolution.sttReal, resolution.ttsReal),
     )
@@ -78,13 +84,17 @@ class ConversationViewModel(app: Application) : AndroidViewModel(app) {
             ),
         )
 
-    fun setSource(language: Language) = updatePair(LanguagePair(language, controller.state.value.pair.target))
+    fun setSource(language: Language) {
+        updatePair(LanguagePair(language, controller.state.value.pair.target))
+        rebuildTranscriberForSource()
+    }
 
     fun setTarget(language: Language) = updatePair(LanguagePair(controller.state.value.pair.source, language))
 
     fun swap() {
         controller.swap()
         persistPair()
+        rebuildTranscriberForSource()
     }
 
     fun submitText(text: String) {
@@ -130,6 +140,17 @@ class ConversationViewModel(app: Application) : AndroidViewModel(app) {
     private fun updatePair(pair: LanguagePair) {
         controller.setPair(pair)
         persistPair()
+    }
+
+    // Reload Whisper for the new source language so recognition stays locked to what
+    // the speaker actually selected. No-op on the stub build (buildTranscriber is null).
+    private fun rebuildTranscriberForSource() {
+        val source = controller.state.value.pair.source.code
+        viewModelScope.launch {
+            controller.rebuildTranscriber {
+                withContext(Dispatchers.Default) { container.buildTranscriber(source) }
+            }
+        }
     }
 
     private fun persistPair() {

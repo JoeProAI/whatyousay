@@ -4,6 +4,7 @@ import ai.whatyousay.core.ConvStatus
 import ai.whatyousay.core.ConversationEngine
 import ai.whatyousay.core.Language
 import ai.whatyousay.core.LanguagePair
+import ai.whatyousay.core.Transcriber
 import ai.whatyousay.core.TranslationPipeline
 import ai.whatyousay.core.Turn
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +72,16 @@ class ConversationController(
     fun swap() {
         engine.setPair(engine.pair.swapped())
         sync()
+    }
+
+    /**
+     * Rebuild the STT engine forced to the current source language. The (heavy) build
+     * runs outside the turn lock; only the swap itself is serialized against a running
+     * turn so a transcribe can never see a half-swapped pipeline.
+     */
+    suspend fun rebuildTranscriber(build: suspend () -> Transcriber?) {
+        val next = build() ?: return
+        mutex.withLock { pipeline.swapTranscriber(next) }
     }
 
     fun startListening() {

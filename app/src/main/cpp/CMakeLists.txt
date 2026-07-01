@@ -26,6 +26,24 @@ set(LLAMA_BUILD_COMMON   OFF CACHE BOOL "" FORCE)
 set(LLAMA_CURL           OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP          OFF CACHE BOOL "" FORCE)
 
+# The Android Gradle plugin compiles the native code with CMAKE_BUILD_TYPE=Debug
+# for a debug-packaged APK. For ggml that means -O0, which makes on-device
+# inference roughly 20-50x slower (a short translation can take a minute). Force
+# an optimized build so the debug APK we hand testers is actually fast.
+if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
+endif()
+
+# Give ggml the arm64 CPU math extensions modern phones have. Without an explicit
+# -march the NDK targets a bare armv8-a and the quantized matmul falls back to slow
+# scalar code. armv8.2-a+dotprod+i8mm+fp16 covers current flagship SoCs (this build
+# targets arm64 devices with these features; older cores would need runtime dispatch
+# via GGML_CPU_ALL_VARIANTS).
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    set(GGML_CPU_ARM_ARCH "armv8.2-a+dotprod+i8mm+fp16" CACHE STRING "" FORCE)
+endif()
+
 # Source resolution: a local checkout (set -DLLAMA_CPP_DIR=/path) is preferred for
 # offline and reproducible builds; otherwise fetch the pinned tag.
 if(DEFINED LLAMA_CPP_DIR AND EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt")
