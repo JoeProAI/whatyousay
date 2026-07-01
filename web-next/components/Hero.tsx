@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { Waitlist } from "./Waitlist";
 
 type Phrase = {
   code: string;
@@ -139,9 +139,20 @@ export function Hero() {
             initial={{ opacity: 0, y: 22 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.32 }}
-            className="mt-9"
+            className="mt-9 flex flex-wrap items-center gap-3"
           >
-            <Waitlist />
+            <Link
+              href="https://github.com/JoeProAI/whatyousay/releases/download/app-v0.1.0/whatyousay-0.1.0.apk"
+              className="label bg-signal px-6 py-4 font-bold text-paper transition-opacity hover:opacity-90"
+            >
+              Download APK / v0.1.0
+            </Link>
+            <Link
+              href="#get"
+              className="label border border-ink/40 px-5 py-4 text-ink transition-colors hover:border-signal hover:text-signal"
+            >
+              Android 8.0+ / how to install
+            </Link>
           </motion.div>
 
           <motion.button
