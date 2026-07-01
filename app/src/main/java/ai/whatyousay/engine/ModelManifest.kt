@@ -124,7 +124,9 @@ object ModelCatalog {
      * for the stage does the planned entry win (and that stage stays on the stub).
      */
     fun forStage(stage: Stage, tier: DeviceTier): ModelPack? {
-        val runnable = packs.filter { it.stage == stage && it.minTier.ordinal <= tier.ordinal }
+        val runnable = packs.filter {
+            it.stage == stage && it.minTier.ordinal <= tier.ordinal && it !in voicePacks
+        }
         val published = runnable.filter { it.url.isNotBlank() }
         return (published.ifEmpty { runnable }).maxByOrNull { it.minTier.ordinal }
     }
@@ -139,13 +141,13 @@ object ModelCatalog {
 
     /**
      * The default MT/STT/TTS bundle for a tier: one translator, one recognizer (both
-     * multilingual), and a voice pack for each selected language that has one. Falls
-     * back to the tier's combined voice pack when no per-language pack matches.
+     * multilingual), and a per-language voice pack for each selected language that has
+     * one. A selection with no voiced language gets no voice pack, rather than an
+     * unrelated one: those languages still transcribe and translate, the phone just
+     * does not speak them.
      */
-    fun defaultsFor(tier: DeviceTier, languages: Collection<String>): List<ModelPack> {
-        val voices = voicePacksFor(languages).ifEmpty { listOfNotNull(forStage(Stage.TTS, tier)) }
-        return listOfNotNull(forStage(Stage.MT, tier), forStage(Stage.STT, tier)) + voices
-    }
+    fun defaultsFor(tier: DeviceTier, languages: Collection<String>): List<ModelPack> =
+        listOfNotNull(forStage(Stage.MT, tier), forStage(Stage.STT, tier)) + voicePacksFor(languages)
 
     fun byId(id: String): ModelPack? = packs.firstOrNull { it.id == id }
 }
