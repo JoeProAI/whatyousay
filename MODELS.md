@@ -128,7 +128,7 @@ adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb root
 PKG=ai.whatyousay; D=/data/data/$PKG/files/staged
 adb shell mkdir -p $D
-for f in stt-whisper-small.zip tts-piper-enfr.zip \
+for f in stt-whisper-small.zip tts-piper-enfrru.zip \
          qwen2.5-0.5b-instruct-q5_k_m.gguf silero_vad.onnx 0.wav; do
   adb push $f /data/local/tmp/$f && adb shell cp /data/local/tmp/$f $D/$f
 done
