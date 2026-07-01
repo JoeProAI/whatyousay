@@ -23,11 +23,20 @@ object LanguageId {
         val cleaned = text.trim()
         if (cleaned.isEmpty() || candidates.isEmpty()) return null
 
+        // A dominant script settles it when only one candidate uses that script;
+        // two candidates sharing a script (e.g. Russian and Ukrainian, both
+        // Cyrillic) fall through to the word profiles.
         scriptOf(cleaned)?.let { script ->
-            candidates.firstOrNull { it.code == script }?.let { return it }
+            val scripted = candidates.filter { it.code in (SCRIPT_LANGS[script] ?: emptySet()) }
+            if (scripted.size == 1) return scripted.single()
+            if (scripted.size > 1) return scoreWords(cleaned, scripted)
         }
 
-        val tokens = tokenize(cleaned)
+        return scoreWords(cleaned, candidates)
+    }
+
+    private fun scoreWords(text: String, candidates: List<Language>): Language? {
+        val tokens = tokenize(text)
         if (tokens.isEmpty()) return null
 
         var best: Language? = null
@@ -35,7 +44,7 @@ object LanguageId {
         var tie = false
         for (language in candidates) {
             val profile = WORDS[language.code] ?: continue
-            val score = tokens.count { it in profile } + accentBonus(cleaned, language.code)
+            val score = tokens.count { it in profile } + accentBonus(text, language.code)
             when {
                 score > bestScore -> {
                     bestScore = score
@@ -48,7 +57,18 @@ object LanguageId {
         return if (bestScore > 0 && !tie) best else null
     }
 
-    /** Pick the language whose script dominates the text, when it is a scripted one. */
+    /** Languages the app supports per non-Latin script. */
+    private val SCRIPT_LANGS: Map<String, Set<String>> = mapOf(
+        "kana" to setOf("ja"),
+        "hangul" to setOf("ko"),
+        "han" to setOf("zh", "ja"),
+        "arabic" to setOf("ar"),
+        "cyrillic" to setOf("ru", "uk"),
+        "devanagari" to setOf("hi"),
+        "thai" to setOf("th"),
+    )
+
+    /** Name the script that dominates the text, when it is a scripted one. */
     private fun scriptOf(text: String): String? {
         var arabic = 0
         var cyrillic = 0
@@ -69,13 +89,13 @@ object LanguageId {
             }
         }
         return when {
-            kana > 0 -> "ja"
-            hangul > 0 -> "ko"
-            han > 0 -> "zh"
-            arabic > 0 -> "ar"
-            cyrillic > 0 -> "ru"
-            devanagari > 0 -> "hi"
-            thai > 0 -> "th"
+            kana > 0 -> "kana"
+            hangul > 0 -> "hangul"
+            han > 0 -> "han"
+            arabic > 0 -> "arabic"
+            cyrillic > 0 -> "cyrillic"
+            devanagari > 0 -> "devanagari"
+            thai > 0 -> "thai"
             else -> null
         }
     }
@@ -94,6 +114,11 @@ object LanguageId {
         "pt" to "ãõáâàéêíóôúç".toSet(),
         "de" to "äöüß".toSet(),
         "it" to "àèéìòù".toSet(),
+        "tr" to "ğışöüç".toSet(),
+        "vi" to "ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ".toSet(),
+        // Letters unique to one side of the Cyrillic pair.
+        "uk" to "іїєґ".toSet(),
+        "ru" to "ыэъё".toSet(),
     )
 
     /** High-frequency function words per language. Enough to separate the pair, not to parse it. */
@@ -131,6 +156,26 @@ object LanguageId {
             "o", "a", "os", "as", "um", "uma", "e", "é", "são", "você", "eu", "de", "em", "que",
             "para", "com", "olá", "obrigado", "onde", "como", "quanto", "por", "favor", "sim",
             "não", "bom", "dia", "fazer", "meu", "nós", "vosso", "posso", "adeus", "desculpe",
+        ),
+        "tr" to setOf(
+            "ve", "bir", "bu", "şu", "ben", "sen", "siz", "biz", "ne", "nasıl", "nerede", "kaç",
+            "merhaba", "selam", "teşekkür", "teşekkürler", "lütfen", "evet", "hayır", "iyi",
+            "günaydın", "var", "yok", "için", "ile", "çok", "değil", "mi", "mı", "mu", "güle",
+        ),
+        "vi" to setOf(
+            "và", "là", "của", "tôi", "bạn", "anh", "chị", "em", "không", "có", "ở", "đâu",
+            "xin", "chào", "cảm", "ơn", "vâng", "dạ", "bao", "nhiêu", "làm", "gì", "này", "đó",
+            "rất", "tốt", "một", "cho", "với", "tạm", "biệt",
+        ),
+        "ru" to setOf(
+            "и", "в", "не", "на", "я", "ты", "вы", "мы", "он", "она", "это", "что", "как",
+            "где", "сколько", "привет", "здравствуйте", "спасибо", "пожалуйста", "да", "нет",
+            "хорошо", "доброе", "утро", "до", "свидания", "извините", "очень",
+        ),
+        "uk" to setOf(
+            "і", "в", "не", "на", "я", "ти", "ви", "ми", "він", "вона", "це", "що", "як",
+            "де", "скільки", "привіт", "вітаю", "дякую", "будь", "ласка", "так", "ні",
+            "добре", "доброго", "ранку", "до", "побачення", "вибачте", "дуже",
         ),
     )
 }

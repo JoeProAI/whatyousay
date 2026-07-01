@@ -30,8 +30,8 @@ interface ModelManager {
 
 /** Picks the right packs for a device. Pure, so it is unit-testable without a filesystem. */
 object ManifestSelector {
-    fun recommended(ramBytes: Long, hasNpu: Boolean): List<ModelPack> =
-        ModelCatalog.defaultsFor(tierFor(ramBytes, hasNpu))
+    fun recommended(ramBytes: Long, hasNpu: Boolean, languages: Collection<String>): List<ModelPack> =
+        ModelCatalog.defaultsFor(tierFor(ramBytes, hasNpu), languages)
 
     fun canRun(pack: ModelPack, ramBytes: Long, hasNpu: Boolean): Boolean =
         pack.minTier.ordinal <= tierFor(ramBytes, hasNpu).ordinal

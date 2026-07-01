@@ -23,7 +23,7 @@ private class EmptyManager : ModelManager {
 
 class ModelInstallPlanTest {
 
-    private val packs = ModelCatalog.defaultsFor(DeviceTier.MID)
+    private val packs = ModelCatalog.defaultsFor(DeviceTier.MID, setOf("en", "fr"))
     private val first get() = packs.first().id
 
     private fun plan() = ModelInstallPlan(packs, EmptyManager())

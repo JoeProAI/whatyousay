@@ -43,8 +43,11 @@ interface VoiceEngineFactory {
     /** Whisper STT. `language` biases a multilingual model; pass "" to auto-detect. */
     fun createTranscriber(modelDir: File, language: String): Transcriber
 
-    /** Kokoro or Piper TTS, chosen from the files present in `modelDir`. */
-    fun createSynthesizer(modelDir: File): Synthesizer
+    /**
+     * Kokoro or Piper TTS from one voice directory per language code. The key ""
+     * marks a voice with no declared language, used as the fallback.
+     */
+    fun createSynthesizer(voiceDirs: Map<String, File>): Synthesizer
 
     /** Silero VAD from a single .onnx model file. */
     fun createVad(vadModel: File): VoiceActivityDetector

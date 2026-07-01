@@ -30,20 +30,50 @@ licensed, multilingual, and runs comfortably on a low-tier phone. The native bri
 ([`llama_jni.cpp`](app/src/main/cpp/llama_jni.cpp)) applies the GGUF's own chat template,
 so swapping in Hy-MT2 / TranslateGemma later is a catalog change only, no native change.
 
-## Top-tier packs (`models-v2`, EN / FR / RU)
+## Top-tier packs (`models-v2`)
 
 Released at
 `https://github.com/JoeProAI/whatyousay/releases/download/models-v2`. These are the
-real translating packs for English, French, and Russian. `ModelCatalog.forStage` prefers
-a published pack over a still-unpublished higher-tier entry, so these are what actually
-load rather than the planned stubs. Whisper small (STT) and Qwen2.5 0.5B (MT) are both
-multilingual, so adding a language is a matter of adding its Piper voice to the TTS pack.
+real translating packs. `ModelCatalog.forStage` prefers a published pack over a
+still-unpublished higher-tier entry, so these are what actually load rather than the
+planned stubs. Whisper small (STT) and Qwen2.5 0.5B (MT) are both multilingual, so
+transcription and translation work for every catalog language out of the box; the only
+per-language asset is the voice.
 
 | Stage | id | Asset | sha256 |
 | --- | --- | --- | --- |
 | MT | `mt-qwen25-05b` | `qwen2.5-0.5b-instruct-q5_k_m.gguf` | `a0a413dcbb4676f21d4c951b98a393324694edb1a20a4f9547d1de8d2919ff3b` |
 | STT | `stt-whisper-small` | `stt-whisper-small.zip` | `822d432f9a6938a80f6bf7d09a1a7f9c41b51054f3ea06a4154cd900cd8d943a` |
-| TTS | `tts-piper-enfrru` | `tts-piper-enfrru.zip` | `6621bbc31b48b4d266bdaccbfe2f89fc6e2680ea772283d8bda9e303d38ac4d6` |
+
+### Per-language voice packs
+
+One Piper voice per language, each its own pack (`tts-piper-{code}.zip`) so a user only
+downloads the voices for the languages they picked in onboarding. Licenses are taken from
+each voice's Piper `MODEL_CARD`. All permit redistribution and commercial use; `en/amy`
+carries CC-BY-SA share-alike terms, and Italian `paola`'s underlying dataset license is
+unverified (the dataset page is blank), so confirm it before monetizing the Italian voice
+(the clean-licensed `it_IT-riccardo` from the M-AILABS set is the safe fallback).
+Languages whose only available Piper voices carry non-commercial terms (Japanese, Korean,
+Thai, Hindi, Arabic today) ship without a voice pack: they still transcribe and translate
+on screen, the phone just does not speak them until a usable voice is published.
+
+| id | Voice | License | sha256 |
+| --- | --- | --- | --- |
+| `tts-piper-en` | `en_US-amy-medium` | CC-BY-SA | `4b596b477c9dde202d35517f2cf140aec12bab1036c770f1eae63dab4a33c222` |
+| `tts-piper-es` | `es_ES-davefx-medium` | CC0 | `558a181e9c757f64636b49ac9bbb54df5d00919a29038e941ab0bc1c164b4f72` |
+| `tts-piper-fr` | `fr_FR-siwis-medium` | CC-BY | `403bc4685b97056b59de98a45913e698b8d592988c10e87b30e20824a6d846b5` |
+| `tts-piper-de` | `de_DE-thorsten-medium` | CC0 | `c2a0ed9dcd78dcdeb7bb0b963b3ab493833b38233c951c981b356a5ec79297dd` |
+| `tts-piper-it` | `it_IT-paola-medium` | unverified (dataset) | `4555568796067f0e59397266c2e552ee540894b11ae9092f28f5400c2549d0f0` |
+| `tts-piper-pt` | `pt_BR-faber-medium` | CC0 | `e05ebbd76df5aa440f05032f5a2c56b066838ed71bd1a5b2965b82b1ad09ac0b` |
+| `tts-piper-zh` | `zh_CN-chaowen-medium` | CC0 | `15c9c520cd4a878fa6ac4caa46ac063e282b1a8a318d7e68634c872041f67c91` |
+| `tts-piper-ru` | `ru_RU-dmitri-medium` | CC0 | `d92a33bad79682f0b7e1d32eb8e5c69479453dbe66da74c3131a6c9d060d09ac` |
+| `tts-piper-tr` | `tr_TR-fahrettin-medium` | CC0 | `ee08cd2207c434ee0cadc5c6ee61c6098ca7208e9fb024a4bc9c1dec06ad4912` |
+| `tts-piper-vi` | `vi_VN-vais1000-medium` | CC-BY | `1892a2f7272f28d27769dbef4e5f1866770724f6c820064c05640e71a9271b78` |
+| `tts-piper-uk` | `uk_UA-ukrainian_tts-medium` | CC0 | `16f0dc3b55d9c41d3a787399249e182b1e7670d717ea4427cb13469eec57f60c` |
+
+The combined `tts-piper-enfrru.zip`
+(`6621bbc31b48b4d266bdaccbfe2f89fc6e2680ea772283d8bda9e303d38ac4d6`) stays hosted for
+existing installs; the catalog now defaults to the per-language packs.
 
 MT note: the default translator is **Qwen2.5-0.5B-Instruct (Q5_K_M, ~420 MB)**, chosen
 for a small download and snappy on-device turns. It is a general instruct model, so the
@@ -54,11 +84,11 @@ explanation, which keeps a spoken turn to just the translation. Gemma 2 2B
 `e0aee85060f168f0f2d8473d7ea41ce2f3230c1bc1374847505ea599288a7787`) remains an optional
 heavier upgrade whose catalog `url` is blank until re-enabled.
 
-The TTS pack holds one Piper voice per language in `en/`, `fr/`, and `ru/` subdirectories;
-`SherpaSynthesizer` loads them all and renders each turn with the voice for the language it
-is asked to speak, so a two-way session speaks both sides. Licenses: Whisper (MIT), Piper
-voices (amy: MIT, siwis: CC0, dmitri: CC0), Qwen2.5 (Apache-2.0), Gemma (Google Gemma
-Terms of Use, which permit redistribution with the terms attached).
+`PipelineFactory` maps every installed voice pack to its language and
+`SherpaSynthesizer` renders each turn with the voice for the language it is asked to
+speak, so a two-way session speaks both sides. Engine licenses: Whisper (MIT), Qwen2.5
+(Apache-2.0), Gemma (Google Gemma Terms of Use, which permit redistribution with the
+terms attached); per-voice licenses are in the table above.
 
 ### Producing the `models-v2` assets
 
@@ -68,12 +98,14 @@ tar xf sherpa-onnx-whisper-small.tar.bz2
 (cd sherpa-onnx-whisper-small && rm -rf test_wavs small-encoder.onnx small-decoder.onnx)
 zip -r stt-whisper-small.zip sherpa-onnx-whisper-small
 
-# TTS: multilingual pack, one Piper voice per language subdirectory
-mkdir -p tts-piper-enfrru/en tts-piper-enfrru/fr tts-piper-enfrru/ru
-tar xf vits-piper-en_US-amy-medium.tar.bz2 && cp -r vits-piper-en_US-amy-medium/* tts-piper-enfrru/en/
-tar xf vits-piper-fr_FR-siwis-medium.tar.bz2 && cp -r vits-piper-fr_FR-siwis-medium/* tts-piper-enfrru/fr/
-tar xf vits-piper-ru_RU-dmitri-medium.tar.bz2 && cp -r vits-piper-ru_RU-dmitri-medium/* tts-piper-enfrru/ru/
-zip -r tts-piper-enfrru.zip tts-piper-enfrru
+# TTS: one pack per language from the official sherpa-onnx Piper bundles
+#   (https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models)
+for v in en_US-amy es_ES-davefx fr_FR-siwis ...; do
+  code=${v%%_*}
+  tar xf vits-piper-$v-medium.tar.bz2
+  mv vits-piper-$v-medium tts-piper-$code
+  zip -r tts-piper-$code.zip tts-piper-$code
+done
 
 # MT: Qwen2.5-0.5B-Instruct Q5_K_M GGUF, downloaded as-is
 #   (huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF)

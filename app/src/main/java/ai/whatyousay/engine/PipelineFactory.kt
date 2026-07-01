@@ -1,5 +1,6 @@
 package ai.whatyousay.engine
 
+import ai.whatyousay.core.Languages
 import ai.whatyousay.core.Synthesizer
 import ai.whatyousay.core.Transcriber
 import ai.whatyousay.core.TranslationPipeline
@@ -91,16 +92,37 @@ object PipelineFactory {
         }
     }
 
+    /**
+     * Every installed voice contributes to one synthesizer: per-language packs map
+     * their single language to the pack directory, and a combined pack maps each of
+     * its per-language subdirectories. A per-language pack wins over a combined one
+     * for the same language.
+     */
     private fun loadSynthesizer(
         factory: VoiceEngineFactory,
         modelRoot: File,
         manager: ModelManager,
         tier: DeviceTier,
     ): Synthesizer? {
-        val pack = ModelCatalog.forStage(Stage.TTS, tier) ?: return null
-        if (!manager.isInstalled(pack)) return null
+        val installed = ModelCatalog.packs
+            .filter { it.stage == Stage.TTS && it.url.isNotBlank() && it.minTier.ordinal <= tier.ordinal }
+            .filter { manager.isInstalled(it) }
+            .sortedByDescending { it.languages.size }
+        val voiceDirs = mutableMapOf<String, File>()
+        for (pack in installed) {
+            val dir = packDir(modelRoot, pack)
+            val subVoices = dir.listFiles()
+                ?.filter { it.isDirectory && Languages.byCode(it.name) != null }
+                .orEmpty()
+            when {
+                subVoices.isNotEmpty() -> subVoices.forEach { voiceDirs[it.name.lowercase()] = it }
+                pack.languages.size == 1 -> voiceDirs[pack.languages.single()] = dir
+                else -> voiceDirs.putIfAbsent("", dir)
+            }
+        }
+        if (voiceDirs.isEmpty()) return null
         return try {
-            factory.createSynthesizer(packDir(modelRoot, pack))
+            factory.createSynthesizer(voiceDirs)
         } catch (e: Throwable) {
             Log.w(TAG, "TTS engine unavailable, using stub", e)
             null
