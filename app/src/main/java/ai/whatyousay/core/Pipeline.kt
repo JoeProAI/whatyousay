@@ -65,19 +65,36 @@ class TranslationPipeline(
     val translator: Translator,
     val synthesizer: Synthesizer,
 ) : AutoCloseable {
+    private val lock = Any()
+    private var closed = false
+
     var transcriber: Transcriber = transcriber
         private set
 
-    /** Replace the transcriber, releasing the previous one. */
+    /**
+     * Replace the transcriber, releasing the previous one. If the pipeline is already
+     * closed, the incoming engine is released instead of installed, so a rebuild that
+     * lands after teardown cannot leak its native handle.
+     */
     fun swapTranscriber(next: Transcriber) {
-        val previous = transcriber
-        transcriber = next
-        if (previous !== next) runCatching { previous.close() }
+        synchronized(lock) {
+            if (closed) {
+                runCatching { next.close() }
+                return
+            }
+            val previous = transcriber
+            transcriber = next
+            if (previous !== next) runCatching { previous.close() }
+        }
     }
 
     override fun close() {
-        runCatching { transcriber.close() }
-        runCatching { translator.close() }
-        runCatching { synthesizer.close() }
+        synchronized(lock) {
+            if (closed) return
+            closed = true
+            runCatching { transcriber.close() }
+            runCatching { translator.close() }
+            runCatching { synthesizer.close() }
+        }
     }
 }

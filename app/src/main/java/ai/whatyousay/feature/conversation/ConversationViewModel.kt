@@ -144,6 +144,8 @@ class ConversationViewModel(app: Application) : AndroidViewModel(app) {
 
     // Reload Whisper for the new source language so recognition stays locked to what
     // the speaker actually selected. No-op on the stub build (buildTranscriber is null).
+    // The controller serializes rebuilds and settles on the latest source, so rapid
+    // switches are safe.
     private fun rebuildTranscriberForSource() {
         val source = controller.state.value.pair.source.code
         viewModelScope.launch {

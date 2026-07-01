@@ -11,9 +11,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Whether each stage resolved to a real native engine or to its stub. */
 data class EngineReadiness(val mt: Boolean, val stt: Boolean, val tts: Boolean) {
@@ -56,6 +59,11 @@ class ConversationController(
     private val engine = ConversationEngine(initialPair, clock)
     private val mutex = Mutex()
 
+    // Serializes STT rebuilds so two language switches never load Whisper concurrently,
+    // and a monotonic request id so a superseded switch is skipped instead of racing.
+    private val rebuildMutex = Mutex()
+    private val latestTranscriberRequest = AtomicInteger(0)
+
     /** A turn that runs longer than this is treated as failed so the UI recovers. */
     private val turnTimeoutMs = 45_000L
 
@@ -75,13 +83,26 @@ class ConversationController(
     }
 
     /**
-     * Rebuild the STT engine forced to the current source language. The (heavy) build
-     * runs outside the turn lock; only the swap itself is serialized against a running
-     * turn so a transcribe can never see a half-swapped pipeline.
+     * Rebuild the STT engine forced to the current source language, then swap it in.
+     *
+     * The whole operation runs in [NonCancellable]: a native model load has no
+     * suspension points, so once [build] starts it always finishes, and running the
+     * install non-cancellably guarantees the freshly loaded engine is either handed to
+     * the pipeline or closed by it, never orphaned if the caller's scope is cancelled.
+     * A monotonic request id lets a switch that has already been superseded skip the
+     * load entirely, so rapid language changes settle on the latest selection. Only the
+     * swap itself takes the turn [mutex], so a transcribe never sees a half-swapped
+     * pipeline.
      */
     suspend fun rebuildTranscriber(build: suspend () -> Transcriber?) {
-        val next = build() ?: return
-        mutex.withLock { pipeline.swapTranscriber(next) }
+        val request = latestTranscriberRequest.incrementAndGet()
+        withContext(NonCancellable) {
+            rebuildMutex.withLock {
+                if (request != latestTranscriberRequest.get()) return@withLock
+                val next = build() ?: return@withLock
+                mutex.withLock { pipeline.swapTranscriber(next) }
+            }
+        }
     }
 
     fun startListening() {
