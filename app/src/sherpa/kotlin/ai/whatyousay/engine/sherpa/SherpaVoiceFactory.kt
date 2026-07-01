@@ -40,22 +40,13 @@ class SherpaVoiceFactory : VoiceEngineFactory {
         SherpaTranscriber(modelDir, language)
 
     /**
-     * A pack may hold a single voice directly, or one voice per language in
-     * subdirectories named by ISO code (e.g. `en/`, `fr/`) so a two-way session can
-     * speak both sides. The synthesizer picks the voice for the language it is asked
-     * to render, falling back to any available voice.
+     * One voice per language code so a two-way session can speak both sides. The
+     * synthesizer renders with the voice of the language it is asked to speak and
+     * stays silent for a language with no installed voice, rather than reading it
+     * with a wrong-language voice.
      */
-    override fun createSynthesizer(modelDir: File): Synthesizer {
-        val perLanguage = modelDir.listFiles()
-            ?.filter { it.isDirectory && Languages.byCode(it.name) != null }
-            .orEmpty()
-        val voices = if (perLanguage.isNotEmpty()) {
-            perLanguage.associate { it.name.lowercase() to SherpaVoice(it) }
-        } else {
-            mapOf("" to SherpaVoice(modelDir))
-        }
-        return SherpaSynthesizer(voices)
-    }
+    override fun createSynthesizer(voiceDirs: Map<String, File>): Synthesizer =
+        SherpaSynthesizer(voiceDirs.mapValues { (_, dir) -> SherpaVoice(dir) })
 
     override fun createVad(vadModel: File): VoiceActivityDetector =
         SherpaVad(vadModel)
@@ -126,11 +117,14 @@ internal class SherpaVoice(modelDir: File) {
                 numThreads = 2,
             )
         } else {
+            // Chinese Piper voices phonemize through a lexicon instead of espeak-ng.
+            val lexicon = File(modelDir, "lexicon.txt").let { if (it.isFile) it.absolutePath else "" }
             OfflineTtsModelConfig(
                 vits = OfflineTtsVitsModelConfig(
                     model = pick(modelDir, ".onnx").absolutePath,
                     tokens = tokens,
                     dataDir = dataDir,
+                    lexicon = lexicon,
                 ),
                 numThreads = 2,
             )
@@ -146,7 +140,7 @@ internal class SherpaSynthesizer(private val voices: Map<String, SherpaVoice>) :
 
     override suspend fun synthesize(text: String, language: Language, sampleRate: Int): ShortArray =
         withContext(Dispatchers.Default) {
-            val voice = voices[language.code.lowercase()] ?: voices.values.first()
+            val voice = voices[language.code.lowercase()] ?: voices[""] ?: return@withContext ShortArray(0)
             val audio = voice.tts.generate(text = text, sid = 0, speed = 1.0f)
             toShort(resample(audio.samples, voice.nativeSampleRate, sampleRate))
         }

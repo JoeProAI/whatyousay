@@ -387,7 +387,7 @@ private fun OnboardingPacksPreview() {
                 selectedTier = DeviceTier.MID,
                 allLanguages = Languages.all,
                 selectedLanguages = setOf("en", "es", "fr"),
-                packs = ModelCatalog.defaultsFor(DeviceTier.MID).mapIndexed { i, pack ->
+                packs = ModelCatalog.defaultsFor(DeviceTier.MID, setOf("en", "es", "fr")).mapIndexed { i, pack ->
                     when (i) {
                         0 -> PackStatus(pack, PackState.INSTALLED, 1f, sha256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
                         1 -> PackStatus(pack, PackState.DOWNLOADING, 0.45f)

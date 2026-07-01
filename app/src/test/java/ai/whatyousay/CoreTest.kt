@@ -99,6 +99,53 @@ class CoreTest {
     }
 
     @Test
+    fun directionFlipsForEveryLatinScriptLanguage() {
+        // One everyday phrase per Latin-script language, mislabeled as English by
+        // the recognizer; the words themselves must still flip the direction.
+        val phrases = mapOf(
+            Languages.ES to "Hola, dónde está la estación",
+            Languages.DE to "Guten Tag, wo ist der Bahnhof",
+            Languages.IT to "Ciao, dove è la stazione",
+            Languages.PT to "Olá, onde é a estação",
+            Languages.TR to "Merhaba, istasyon nerede",
+            Languages.VI to "Xin chào, nhà ga ở đâu",
+        )
+        for ((lang, phrase) in phrases) {
+            val pair = LanguagePair(Languages.EN, lang)
+            val e = ConversationEngine(pair)
+            assertEquals(lang.code, pair.swapped(), e.directionFor(phrase, Languages.EN))
+            assertEquals(lang.code, pair, e.directionFor("Hello, where is the station", lang))
+        }
+    }
+
+    @Test
+    fun directionFlipsForEveryScriptedLanguage() {
+        val phrases = mapOf(
+            Languages.RU to "Привет, где вокзал",
+            Languages.UK to "Привіт, де вокзал",
+            Languages.ZH to "你好，车站在哪里",
+            Languages.JA to "こんにちは、駅はどこですか",
+            Languages.KO to "안녕하세요, 역은 어디입니까",
+            Languages.AR to "مرحبا أين المحطة",
+            Languages.HI to "नमस्ते, स्टेशन कहाँ है",
+            Languages.TH to "สวัสดี สถานีอยู่ที่ไหน",
+        )
+        for ((lang, phrase) in phrases) {
+            val pair = LanguagePair(Languages.EN, lang)
+            val e = ConversationEngine(pair)
+            assertEquals(lang.code, pair.swapped(), e.directionFor(phrase, Languages.EN))
+        }
+    }
+
+    @Test
+    fun separatesRussianFromUkrainian() {
+        // Both are Cyrillic, so the pair is settled by words and unique letters.
+        val pair = listOf(Languages.RU, Languages.UK)
+        assertEquals(Languages.UK, LanguageId.identify("Привіт, дуже дякую", pair))
+        assertEquals(Languages.RU, LanguageId.identify("Привет, спасибо большое", pair))
+    }
+
+    @Test
     fun returnsNullWhenNoCandidateMatches() {
         assertNull(LanguageId.identify("42 99", listOf(Languages.EN, Languages.FR)))
     }

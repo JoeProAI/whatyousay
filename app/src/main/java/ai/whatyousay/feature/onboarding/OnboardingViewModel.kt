@@ -54,7 +54,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     private val container = (app as WhatYouSayApp).container
 
     private var plan = ModelInstallPlan(
-        ModelCatalog.defaultsFor(container.detectedTier),
+        ModelCatalog.defaultsFor(container.detectedTier, container.settings.languageCodes),
         container.modelManager,
     )
 
@@ -91,17 +91,26 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectTier(tier: DeviceTier) {
         if (tier == _state.value.selectedTier) return
-        jobs.values.forEach { it.cancel() }
-        jobs.clear()
-        plan = ModelInstallPlan(ModelCatalog.defaultsFor(tier), container.modelManager)
         _state.update { it.copy(selectedTier = tier) }
-        emitPlan(plan)
+        rebuildPlan()
     }
 
     fun toggleLanguage(code: String) {
         val current = _state.value.selectedLanguages
         val updated = if (code in current) current - code else current + code
-        _state.value = _state.value.copy(selectedLanguages = updated)
+        _state.update { it.copy(selectedLanguages = updated) }
+        rebuildPlan()
+    }
+
+    /** The pack list depends on both the tier and the selected languages. */
+    private fun rebuildPlan() {
+        jobs.values.forEach { it.cancel() }
+        jobs.clear()
+        plan = ModelInstallPlan(
+            ModelCatalog.defaultsFor(_state.value.selectedTier, _state.value.selectedLanguages),
+            container.modelManager,
+        )
+        emitPlan(plan)
     }
 
     fun downloadPack(packId: String) {
