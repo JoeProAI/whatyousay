@@ -144,8 +144,14 @@ Java_ai_whatyousay_engine_LlamaTranslator_nativeTranslate(
     const std::string src = to_std_string(env, src_);
     const std::string tgt = to_std_string(env, tgt_);
 
+    // Gemma and other general instruct models will happily explain or comment on a
+    // translation unless told not to. Constrain them to emit only the translated
+    // text so a spoken turn stays short and does not ramble.
     const std::string instruction =
-        "Translate the following from " + lang_name(src) + " to " + lang_name(tgt) + ":\n" + text;
+        "You are a translation engine. Translate the text below from " + lang_name(src) +
+        " to " + lang_name(tgt) +
+        ". Output only the translated text: no explanations, notes, pronunciation, "
+        "alternatives, quotation marks, or commentary.\n\nText:\n" + text;
     const std::string prompt = build_prompt(translator->model, instruction);
 
     const int32_t n_prompt = -llama_tokenize(
@@ -170,7 +176,7 @@ Java_ai_whatyousay_engine_LlamaTranslator_nativeTranslate(
 
     std::string result;
     const int32_t n_ctx = static_cast<int32_t>(llama_n_ctx(translator->ctx));
-    const int max_new_tokens = 256;
+    const int max_new_tokens = 128;
 
     llama_batch batch = llama_batch_get_one(tokens.data(), static_cast<int32_t>(tokens.size()));
     llama_token new_token_id = 0;
@@ -200,12 +206,34 @@ Java_ai_whatyousay_engine_LlamaTranslator_nativeTranslate(
 
     llama_sampler_free(sampler);
 
-    // Trim leading whitespace the template can introduce before the model turn.
+    // Strip a chatty label or wrapping quotes the model sometimes adds, and keep only
+    // the translation itself. A blank line usually separates the translation from any
+    // explanation the model tacks on, so cut at the first one.
     size_t start = result.find_first_not_of(" \n\r\t");
     if (start == std::string::npos) {
         return env->NewStringUTF("");
     }
-    return env->NewStringUTF(result.substr(start).c_str());
+    std::string out = result.substr(start);
+    for (const char* label : {"Translation:", "translation:", "Translated text:"}) {
+        const size_t len = std::string(label).size();
+        if (out.compare(0, len, label) == 0) {
+            out.erase(0, len);
+            const size_t after = out.find_first_not_of(" \n\r\t");
+            out = after == std::string::npos ? "" : out.substr(after);
+            break;
+        }
+    }
+    const size_t para = out.find("\n\n");
+    if (para != std::string::npos) {
+        out = out.substr(0, para);
+    }
+    while (!out.empty() && (out.back() == ' ' || out.back() == '\n' || out.back() == '\r' || out.back() == '\t')) {
+        out.pop_back();
+    }
+    if (out.size() >= 2 && out.front() == '"' && out.back() == '"') {
+        out = out.substr(1, out.size() - 2);
+    }
+    return env->NewStringUTF(out.c_str());
 }
 
 extern "C" JNIEXPORT void JNICALL

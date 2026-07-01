@@ -74,9 +74,9 @@ class CoreTest {
 
     @Test
     fun catalogPrefersAPublishedPackOverAPlannedUpgrade() {
-        // A MID device can run the planned Hunyuan pack (blank url) and the published
-        // Gemma pack; forStage must pick the one that actually has a url so the stage
-        // gets a real engine instead of silently falling back to the stub.
+        // A MID device can run the planned Hunyuan/Gemma packs (blank url) and the
+        // published Qwen pack; forStage must pick the one that actually has a url so the
+        // stage gets a real engine instead of silently falling back to the stub.
         val midMt = ModelCatalog.forStage(Stage.MT, DeviceTier.MID)
         assertNotNull(midMt)
         assertTrue(midMt!!.url.isNotBlank())
