@@ -30,19 +30,20 @@ licensed, multilingual, and runs comfortably on a low-tier phone. The native bri
 ([`llama_jni.cpp`](app/src/main/cpp/llama_jni.cpp)) applies the GGUF's own chat template,
 so swapping in Hy-MT2 / TranslateGemma later is a catalog change only, no native change.
 
-## Top-tier packs (`models-v2`, EN <-> FR)
+## Top-tier packs (`models-v2`, EN / FR / RU)
 
 Released at
 `https://github.com/JoeProAI/whatyousay/releases/download/models-v2`. These are the
-real translating packs for EN <-> FR. `ModelCatalog.forStage` prefers a published pack
-over a still-unpublished higher-tier entry, so these are what actually load rather than
-the planned stubs.
+real translating packs for English, French, and Russian. `ModelCatalog.forStage` prefers
+a published pack over a still-unpublished higher-tier entry, so these are what actually
+load rather than the planned stubs. Whisper small (STT) and Qwen2.5 0.5B (MT) are both
+multilingual, so adding a language is a matter of adding its Piper voice to the TTS pack.
 
 | Stage | id | Asset | sha256 |
 | --- | --- | --- | --- |
 | MT | `mt-qwen25-05b` | `qwen2.5-0.5b-instruct-q5_k_m.gguf` | `a0a413dcbb4676f21d4c951b98a393324694edb1a20a4f9547d1de8d2919ff3b` |
 | STT | `stt-whisper-small` | `stt-whisper-small.zip` | `822d432f9a6938a80f6bf7d09a1a7f9c41b51054f3ea06a4154cd900cd8d943a` |
-| TTS | `tts-piper-enfr` | `tts-piper-enfr.zip` | `206338d6bc7bc44f909c8f96d7ca7941aff65c76fabf322113fbf64c526c7206` |
+| TTS | `tts-piper-enfrru` | `tts-piper-enfrru.zip` | `6621bbc31b48b4d266bdaccbfe2f89fc6e2680ea772283d8bda9e303d38ac4d6` |
 
 MT note: the default translator is **Qwen2.5-0.5B-Instruct (Q5_K_M, ~420 MB)**, chosen
 for a small download and snappy on-device turns. It is a general instruct model, so the
@@ -53,10 +54,10 @@ explanation, which keeps a spoken turn to just the translation. Gemma 2 2B
 `e0aee85060f168f0f2d8473d7ea41ce2f3230c1bc1374847505ea599288a7787`) remains an optional
 heavier upgrade whose catalog `url` is blank until re-enabled.
 
-The TTS pack holds one Piper voice per language in `en/` and `fr/` subdirectories;
-`SherpaSynthesizer` loads both and renders each turn with the voice for the language it
-is asked to speak, so a two-way EN <-> FR session speaks both sides. Licenses: Whisper
-(MIT), Piper voices (amy: MIT, siwis: CC0), Qwen2.5 (Apache-2.0), Gemma (Google Gemma
+The TTS pack holds one Piper voice per language in `en/`, `fr/`, and `ru/` subdirectories;
+`SherpaSynthesizer` loads them all and renders each turn with the voice for the language it
+is asked to speak, so a two-way session speaks both sides. Licenses: Whisper (MIT), Piper
+voices (amy: MIT, siwis: CC0, dmitri: CC0), Qwen2.5 (Apache-2.0), Gemma (Google Gemma
 Terms of Use, which permit redistribution with the terms attached).
 
 ### Producing the `models-v2` assets
@@ -67,11 +68,12 @@ tar xf sherpa-onnx-whisper-small.tar.bz2
 (cd sherpa-onnx-whisper-small && rm -rf test_wavs small-encoder.onnx small-decoder.onnx)
 zip -r stt-whisper-small.zip sherpa-onnx-whisper-small
 
-# TTS: bilingual pack, one Piper voice per language subdirectory
-mkdir -p tts-piper-enfr/en tts-piper-enfr/fr
-tar xf vits-piper-en_US-amy-medium.tar.bz2 && cp -r vits-piper-en_US-amy-medium/* tts-piper-enfr/en/
-tar xf vits-piper-fr_FR-siwis-medium.tar.bz2 && cp -r vits-piper-fr_FR-siwis-medium/* tts-piper-enfr/fr/
-zip -r tts-piper-enfr.zip tts-piper-enfr
+# TTS: multilingual pack, one Piper voice per language subdirectory
+mkdir -p tts-piper-enfrru/en tts-piper-enfrru/fr tts-piper-enfrru/ru
+tar xf vits-piper-en_US-amy-medium.tar.bz2 && cp -r vits-piper-en_US-amy-medium/* tts-piper-enfrru/en/
+tar xf vits-piper-fr_FR-siwis-medium.tar.bz2 && cp -r vits-piper-fr_FR-siwis-medium/* tts-piper-enfrru/fr/
+tar xf vits-piper-ru_RU-dmitri-medium.tar.bz2 && cp -r vits-piper-ru_RU-dmitri-medium/* tts-piper-enfrru/ru/
+zip -r tts-piper-enfrru.zip tts-piper-enfrru
 
 # MT: Qwen2.5-0.5B-Instruct Q5_K_M GGUF, downloaded as-is
 #   (huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF)
@@ -126,7 +128,7 @@ adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb root
 PKG=ai.whatyousay; D=/data/data/$PKG/files/staged
 adb shell mkdir -p $D
-for f in stt-whisper-small.zip tts-piper-enfr.zip \
+for f in stt-whisper-small.zip tts-piper-enfrru.zip \
          qwen2.5-0.5b-instruct-q5_k_m.gguf silero_vad.onnx 0.wav; do
   adb push $f /data/local/tmp/$f && adb shell cp /data/local/tmp/$f $D/$f
 done

@@ -62,6 +62,23 @@ class CoreTest {
         assertEquals(enFr, e.directionFor("42", Languages.EN))
     }
 
+    private val enRu = LanguagePair(Languages.EN, Languages.RU)
+
+    @Test
+    fun directionFlipsToRuEnWhenCyrillicIsHeard() {
+        // Cyrillic transcript is unmistakably Russian, so a short utterance the
+        // recognizer mislabels as English still routes RU->EN.
+        val e = ConversationEngine(enRu)
+        assertEquals(enRu.swapped(), e.directionFor("Привет", Languages.EN))
+        assertEquals(enRu.swapped(), e.directionFor("Спасибо большое", null))
+    }
+
+    @Test
+    fun directionStaysEnRuForLatinText() {
+        val e = ConversationEngine(enRu)
+        assertEquals(enRu, e.directionFor("Hello there", Languages.RU))
+    }
+
     @Test
     fun identifiesLatinLanguagesByFunctionWords() {
         val enFrList = listOf(Languages.EN, Languages.FR)
