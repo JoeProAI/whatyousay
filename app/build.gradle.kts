@@ -60,10 +60,36 @@ android {
         sourceSets.getByName("main").java.srcDir("src/sherpa/kotlin")
     }
 
+    // Release signing reads from Gradle properties or env so the keystore never
+    // lives in the repo. Provide -PreleaseStoreFile=... (and the passwords) or
+    // the WYS_STORE_FILE / WYS_STORE_PASSWORD / WYS_KEY_ALIAS / WYS_KEY_PASSWORD
+    // env vars to produce a signed release APK. Absent those, release stays
+    // unsigned so CI and contributors can still assemble it.
+    val releaseStoreFile = (project.findProperty("releaseStoreFile") as String?)
+        ?: System.getenv("WYS_STORE_FILE")
+    if (releaseStoreFile != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = (project.findProperty("releaseStorePassword") as String?)
+                    ?: System.getenv("WYS_STORE_PASSWORD")
+                keyAlias = (project.findProperty("releaseKeyAlias") as String?)
+                    ?: System.getenv("WYS_KEY_ALIAS")
+                keyPassword = (project.findProperty("releaseKeyPassword") as String?)
+                    ?: System.getenv("WYS_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Minification is off: the app binds llama.cpp/sherpa-onnx over JNI by
+            // fully-qualified name, so renaming those classes would break the
+            // native bridges. Keep the release build faithful to what we test.
+            isMinifyEnabled = false
+            if (releaseStoreFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

@@ -3,7 +3,6 @@ import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { Hero } from "@/components/Hero";
 import { Reveal } from "@/components/Reveal";
-import { Waitlist } from "@/components/Waitlist";
 
 const PILLARS = [
   {
@@ -183,7 +182,7 @@ export default function Page() {
         </div>
       </section>
 
-      {/* GET — waitlist CTA */}
+      {/* GET — download CTA */}
       <section id="get" className="relative overflow-hidden border-t border-line bg-ink text-paper">
         <div className="grid-paper absolute inset-0 opacity-[0.06]" aria-hidden />
         <div className="shell relative py-[clamp(72px,11vw,150px)] text-center">
@@ -203,16 +202,20 @@ export default function Page() {
           </Reveal>
           <Reveal delay={0.16} className="mt-9 flex flex-col items-center gap-4">
             <p className="max-w-[52ch] text-paper/70">
-              The build is in active development. Drop your email and we will send the APK the moment it ships.
+              Early access. Download the APK directly and sideload it, then grab the model pack once over wifi.
+              Everything after that runs on-device, offline.
             </p>
-            <div className="flex w-full justify-center [&_input]:bg-ink [&_input]:text-paper [&_input]:placeholder:text-paper/40">
-              <Waitlist compact />
-            </div>
             <Link
-              href="https://github.com/JoeProAI"
-              className="label mt-1 border border-paper/25 px-4 py-3 text-paper transition-colors hover:border-signal hover:text-signal"
+              href="https://github.com/JoeProAI/whatyousay/releases/download/app-v0.1.0/whatyousay-0.1.0.apk"
+              className="label mt-1 bg-signal px-6 py-4 font-bold text-ink transition-opacity hover:opacity-90"
             >
-              View on GitHub
+              Download APK / v0.1.0
+            </Link>
+            <Link
+              href="https://github.com/JoeProAI/whatyousay/releases/tag/app-v0.1.0"
+              className="label border border-paper/25 px-4 py-3 text-paper transition-colors hover:border-signal hover:text-signal"
+            >
+              Release notes / install steps
             </Link>
           </Reveal>
         </div>
@@ -231,7 +234,7 @@ export default function Page() {
                 ["Why it's different", "#why"],
                 ["How it works", "#how"],
                 ["Works anywhere", "#anywhere"],
-                ["Get notified", "#get"],
+                ["Download", "#get"],
               ].map(([label, href]) => (
                 <Link key={label} href={href} className="block py-1 text-paper/70 transition-colors hover:text-signal">
                   {label}

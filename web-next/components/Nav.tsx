@@ -27,7 +27,7 @@ export function Nav() {
             href="#get"
             className="label border border-signal bg-signal px-3.5 py-2 font-bold text-ink transition-transform hover:-translate-y-0.5"
           >
-            Get notified
+            Download
           </Link>
         </nav>
       </div>
