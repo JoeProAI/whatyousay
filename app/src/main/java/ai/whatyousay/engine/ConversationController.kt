@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Whether each stage resolved to a real native engine or to its stub. */
 data class EngineReadiness(val mt: Boolean, val stt: Boolean, val tts: Boolean) {
@@ -53,6 +54,9 @@ class ConversationController(
 
     private val engine = ConversationEngine(initialPair, clock)
     private val mutex = Mutex()
+
+    /** A turn that runs longer than this is treated as failed so the UI recovers. */
+    private val turnTimeoutMs = 45_000L
 
     private val _state = MutableStateFlow(
         ConversationState(status = engine.status, pair = engine.pair, readiness = readiness),
@@ -111,21 +115,30 @@ class ConversationController(
         val direction = engine.directionFor(heard, detected) ?: return
         // Show the recognized words forming before the translation lands.
         _state.update { it.copy(status = engine.status, partial = heard, error = null) }
-        runCatching { pipeline.translator.translate(heard, direction) }
-            .onSuccess { result ->
-                engine.commit(result)
-                _state.update { it.copy(status = engine.status, partial = "", turns = engine.turns) }
-                val pcm = runCatching {
-                    pipeline.synthesizer.synthesize(result.translatedText, direction.target, sampleRate)
-                }.getOrNull()
-                if (pcm != null) speaker.speak(pcm, sampleRate)
-                engine.ready()
-                _state.update { it.copy(status = engine.status) }
+        // Bound the translate call: a wedged or pathologically slow turn can never leave
+        // the UI stuck on "translating" forever. A timeout (null) and a real failure
+        // (exception) both recover to ready, but keep their messages distinct so an
+        // actual engine error is not hidden behind a misleading "timed out".
+        val translated = runCatching {
+            withTimeoutOrNull(turnTimeoutMs) { pipeline.translator.translate(heard, direction) }
+        }
+        val result = translated.getOrNull()
+        if (result == null) {
+            engine.ready()
+            val message = translated.exceptionOrNull()?.message ?: "Translation timed out"
+            _state.update { it.copy(error = message, status = engine.status, partial = "") }
+            return
+        }
+        engine.commit(result)
+        _state.update { it.copy(status = engine.status, partial = "", turns = engine.turns) }
+        val pcm = runCatching {
+            withTimeoutOrNull(turnTimeoutMs) {
+                pipeline.synthesizer.synthesize(result.translatedText, direction.target, sampleRate)
             }
-            .onFailure { e ->
-                engine.ready()
-                _state.update { it.copy(error = e.message, status = engine.status, partial = "") }
-            }
+        }.getOrNull()
+        if (pcm != null) speaker.speak(pcm, sampleRate)
+        engine.ready()
+        _state.update { it.copy(status = engine.status) }
     }
 
     fun clearError() {

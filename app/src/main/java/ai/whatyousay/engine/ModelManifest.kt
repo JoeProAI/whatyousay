@@ -45,23 +45,22 @@ object ModelCatalog {
     /** Where the released, repackaged model assets live. See MODELS.md. */
     const val RELEASE = "https://github.com/JoeProAI/whatyousay/releases/download/models-v1"
 
-    /** Top-tier EN/FR packs (Whisper small, Gemma 2 2B, bilingual Piper voices). */
+    /** Real EN/FR packs (Whisper small, Qwen2.5 0.5B, bilingual Piper voices). */
     const val RELEASE_V2 = "https://github.com/JoeProAI/whatyousay/releases/download/models-v2"
 
     private val EN_FR = listOf(Languages.EN.code, Languages.FR.code)
 
     val packs: List<ModelPack> = listOf(
-        // Machine translation
+        // Machine translation. The default is the light, fast Qwen2.5 0.5B run with a
+        // strict translation-only prompt (see llama_jni.cpp): small download, snappy
+        // turns, and no chatty rambling. Gemma 2 2B is kept as an optional heavier,
+        // higher-quality upgrade (unpublished until re-enabled) rather than the default.
         ModelPack(
-            "mt-qwen25-05b", Stage.MT, "Qwen2.5 0.5B Instruct (multilingual)", 470 * MB, CORE_LANGS, "Q4_K_M", DeviceTier.LOW,
-            "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
-            "$RELEASE/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+            "mt-qwen25-05b", Stage.MT, "Qwen2.5 0.5B Instruct (multilingual)", 420 * MB, CORE_LANGS, "Q5_K_M", DeviceTier.LOW,
+            "a0a413dcbb4676f21d4c951b98a393324694edb1a20a4f9547d1de8d2919ff3b",
+            "$RELEASE_V2/qwen2.5-0.5b-instruct-q5_k_m.gguf",
         ),
-        ModelPack(
-            "mt-gemma2-2b", Stage.MT, "Gemma 2 2B Instruct", 1_710 * MB, CORE_LANGS, "Q4_K_M", DeviceTier.MID,
-            "e0aee85060f168f0f2d8473d7ea41ce2f3230c1bc1374847505ea599288a7787",
-            "$RELEASE_V2/gemma-2-2b-it-Q4_K_M.gguf",
-        ),
+        ModelPack("mt-gemma2-2b", Stage.MT, "Gemma 2 2B Instruct", 1_710 * MB, CORE_LANGS, "Q4_K_M", DeviceTier.MID, "", ""),
         ModelPack("mt-hunyuan-15-1b8", Stage.MT, "Hunyuan HY-MT1.5 1.8B", 1_200 * MB, CORE_LANGS, "Q4_K_M", DeviceTier.MID, "", ""),
         ModelPack("mt-translategemma-4b", Stage.MT, "TranslateGemma 4B (55 languages)", 2_700 * MB, CORE_LANGS, "Q4_K_M", DeviceTier.FLAGSHIP, "", ""),
         // Speech to text

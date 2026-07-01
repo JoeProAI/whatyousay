@@ -34,21 +34,30 @@ so swapping in Hy-MT2 / TranslateGemma later is a catalog change only, no native
 
 Released at
 `https://github.com/JoeProAI/whatyousay/releases/download/models-v2`. These are the
-higher-quality packs a MID or FLAGSHIP device selects for the first real translating
-build. `ModelCatalog.forStage` prefers a published pack over a still-unpublished
-higher-tier entry, so these are what actually load rather than the planned stubs.
+real translating packs for EN <-> FR. `ModelCatalog.forStage` prefers a published pack
+over a still-unpublished higher-tier entry, so these are what actually load rather than
+the planned stubs.
 
 | Stage | id | Asset | sha256 |
 | --- | --- | --- | --- |
-| MT | `mt-gemma2-2b` | `gemma-2-2b-it-Q4_K_M.gguf` | `e0aee85060f168f0f2d8473d7ea41ce2f3230c1bc1374847505ea599288a7787` |
+| MT | `mt-qwen25-05b` | `qwen2.5-0.5b-instruct-q5_k_m.gguf` | `a0a413dcbb4676f21d4c951b98a393324694edb1a20a4f9547d1de8d2919ff3b` |
 | STT | `stt-whisper-small` | `stt-whisper-small.zip` | `822d432f9a6938a80f6bf7d09a1a7f9c41b51054f3ea06a4154cd900cd8d943a` |
 | TTS | `tts-piper-enfr` | `tts-piper-enfr.zip` | `206338d6bc7bc44f909c8f96d7ca7941aff65c76fabf322113fbf64c526c7206` |
+
+MT note: the default translator is **Qwen2.5-0.5B-Instruct (Q5_K_M, ~420 MB)**, chosen
+for a small download and snappy on-device turns. It is a general instruct model, so the
+native bridge ([`llama_jni.cpp`](app/src/main/cpp/llama_jni.cpp)) prompts it as a strict
+translation engine ("output only the translated text") and trims any stray label or
+explanation, which keeps a spoken turn to just the translation. Gemma 2 2B
+(`gemma-2-2b-it-Q4_K_M.gguf`, still hosted here, sha256
+`e0aee85060f168f0f2d8473d7ea41ce2f3230c1bc1374847505ea599288a7787`) remains an optional
+heavier upgrade whose catalog `url` is blank until re-enabled.
 
 The TTS pack holds one Piper voice per language in `en/` and `fr/` subdirectories;
 `SherpaSynthesizer` loads both and renders each turn with the voice for the language it
 is asked to speak, so a two-way EN <-> FR session speaks both sides. Licenses: Whisper
-(MIT), Piper voices (amy: MIT, siwis: CC0), Gemma (Google Gemma Terms of Use, which
-permit redistribution with the terms attached).
+(MIT), Piper voices (amy: MIT, siwis: CC0), Qwen2.5 (Apache-2.0), Gemma (Google Gemma
+Terms of Use, which permit redistribution with the terms attached).
 
 ### Producing the `models-v2` assets
 
@@ -64,8 +73,8 @@ tar xf vits-piper-en_US-amy-medium.tar.bz2 && cp -r vits-piper-en_US-amy-medium/
 tar xf vits-piper-fr_FR-siwis-medium.tar.bz2 && cp -r vits-piper-fr_FR-siwis-medium/* tts-piper-enfr/fr/
 zip -r tts-piper-enfr.zip tts-piper-enfr
 
-# MT: Gemma-2-2B-Instruct Q4_K_M GGUF, downloaded as-is
-#   (huggingface.co/bartowski/gemma-2-2b-it-GGUF)
+# MT: Qwen2.5-0.5B-Instruct Q5_K_M GGUF, downloaded as-is
+#   (huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF)
 sha256sum *.zip *.gguf   # must match the table above
 ```
 
@@ -117,8 +126,8 @@ adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb root
 PKG=ai.whatyousay; D=/data/data/$PKG/files/staged
 adb shell mkdir -p $D
-for f in stt-whisper-tiny.zip tts-piper-amy.zip \
-         qwen2.5-0.5b-instruct-q4_k_m.gguf silero_vad.onnx 0.wav; do
+for f in stt-whisper-small.zip tts-piper-enfr.zip \
+         qwen2.5-0.5b-instruct-q5_k_m.gguf silero_vad.onnx 0.wav; do
   adb push $f /data/local/tmp/$f && adb shell cp /data/local/tmp/$f $D/$f
 done
 adb shell chmod -R 777 $D   # 0.wav is any 16 kHz mono 16-bit PCM clip
