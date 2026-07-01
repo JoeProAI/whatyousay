@@ -48,7 +48,7 @@ object ModelCatalog {
     /** Real EN/FR packs (Whisper small, Qwen2.5 0.5B, bilingual Piper voices). */
     const val RELEASE_V2 = "https://github.com/JoeProAI/whatyousay/releases/download/models-v2"
 
-    private val EN_FR = listOf(Languages.EN.code, Languages.FR.code)
+    private val EN_FR_RU = listOf(Languages.EN.code, Languages.FR.code, Languages.RU.code)
 
     val packs: List<ModelPack> = listOf(
         // Machine translation. The default is the light, fast Qwen2.5 0.5B run with a
@@ -81,9 +81,9 @@ object ModelCatalog {
             "$RELEASE/tts-piper-amy.zip",
         ),
         ModelPack(
-            "tts-piper-enfr", Stage.TTS, "Piper voices (English + French)", 140 * MB, EN_FR, "fp16", DeviceTier.MID,
-            "206338d6bc7bc44f909c8f96d7ca7941aff65c76fabf322113fbf64c526c7206",
-            "$RELEASE_V2/tts-piper-enfr.zip",
+            "tts-piper-enfrru", Stage.TTS, "Piper voices (English, French, Russian)", 205 * MB, EN_FR_RU, "fp16", DeviceTier.MID,
+            "6621bbc31b48b4d266bdaccbfe2f89fc6e2680ea772283d8bda9e303d38ac4d6",
+            "$RELEASE_V2/tts-piper-enfrru.zip",
         ),
         ModelPack("tts-kokoro-82m", Stage.TTS, "Kokoro-82M", 330 * MB, CORE_LANGS, "fp16", DeviceTier.FLAGSHIP, "", ""),
         // Camera / multimodal
