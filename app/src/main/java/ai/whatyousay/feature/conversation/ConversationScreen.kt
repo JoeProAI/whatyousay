@@ -365,27 +365,26 @@ private fun TalkButton(
     onRequestMic: () -> Unit,
 ) {
     val label = when {
-        !micGranted -> "TAP TO ENABLE MIC"
         recording -> "LISTENING. RELEASE TO TRANSLATE"
+        !micGranted -> "HOLD TO TALK (enable mic)"
         else -> "HOLD TO TALK"
     }
     val background = if (recording) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
     val border = if (recording) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     val content = if (recording) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
 
-    val pressModifier = if (micGranted) {
-        Modifier.pointerInput(Unit) {
-            detectTapGestures(
-                onPress = {
-                    onStartTalk()
-                    val released = tryAwaitRelease()
-                    onStopTalk()
-                    released
-                },
-            )
-        }
-    } else {
-        Modifier.clickable(onClick = onRequestMic)
+    // Always hold-to-talk. If the mic is not granted yet, the first press asks for it
+    // and the demo still runs, so the button never sits in a dead state.
+    val pressModifier = Modifier.pointerInput(micGranted) {
+        detectTapGestures(
+            onPress = {
+                if (!micGranted) onRequestMic()
+                onStartTalk()
+                val released = tryAwaitRelease()
+                onStopTalk()
+                released
+            },
+        )
     }
 
     Box(

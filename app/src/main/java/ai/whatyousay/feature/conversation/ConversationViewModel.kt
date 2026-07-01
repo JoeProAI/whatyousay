@@ -57,11 +57,9 @@ class ConversationViewModel(app: Application) : AndroidViewModel(app) {
 
     private val recorder = PushToTalkRecorder()
 
-    private val availableLanguages: List<Language> =
-        container.settings.languageCodes
-            .mapNotNull { Languages.byCode(it) }
-            .ifEmpty { Languages.all }
-            .sortedBy { it.name }
+    // Every language is always selectable here; the onboarding pick only prioritizes
+    // which packs to download, it does not restrict what the user can translate.
+    private val availableLanguages: List<Language> = Languages.all.sortedBy { it.name }
 
     private val micGranted = MutableStateFlow(hasMicPermission())
     private val recording = MutableStateFlow(false)
@@ -98,17 +96,18 @@ class ConversationViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startPushToTalk() {
-        if (!micGranted.value) return
         recording.value = true
         controller.startListening()
-        recorder.start(viewModelScope)
+        // Capture real audio only when the mic is granted; without it the demo still
+        // produces a turn from an empty segment so the button is never a dead end.
+        if (micGranted.value) recorder.start(viewModelScope)
     }
 
     fun stopPushToTalk() {
         if (!recording.value) return
         recording.value = false
         viewModelScope.launch {
-            val pcm = recorder.stop()
+            val pcm = if (micGranted.value) recorder.stop() else ShortArray(0)
             controller.submitAudio(pcm, hint = controller.state.value.pair.source)
             controller.stopListening()
         }

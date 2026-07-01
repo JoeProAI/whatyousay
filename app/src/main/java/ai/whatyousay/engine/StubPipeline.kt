@@ -9,6 +9,7 @@ import ai.whatyousay.core.TranslationResult
 import ai.whatyousay.core.LanguagePair
 import ai.whatyousay.core.Synthesizer
 import ai.whatyousay.core.TranslationPipeline
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * A fully local stub pipeline so the UI runs, previews, and tests before the
@@ -18,15 +19,36 @@ import ai.whatyousay.core.TranslationPipeline
  */
 
 private val DEMO_DICTIONARY: Map<String, Map<String, String>> = mapOf(
-    "hello" to mapOf("es" to "hola", "fr" to "bonjour", "de" to "hallo", "ja" to "konnichiwa"),
-    "thank you" to mapOf("es" to "gracias", "fr" to "merci", "de" to "danke", "ja" to "arigato"),
-    "where is the station" to mapOf("es" to "donde esta la estacion", "fr" to "ou est la gare"),
-    "how much is this" to mapOf("es" to "cuanto cuesta esto", "fr" to "combien ca coute"),
+    "hello" to mapOf(
+        "es" to "hola", "fr" to "bonjour", "de" to "hallo", "it" to "ciao", "pt" to "ola",
+        "ja" to "konnichiwa", "ko" to "annyeong", "zh" to "nihao", "ru" to "privet",
+    ),
+    "thank you" to mapOf(
+        "es" to "gracias", "fr" to "merci", "de" to "danke", "it" to "grazie", "pt" to "obrigado",
+        "ja" to "arigato", "ko" to "gamsahamnida", "zh" to "xiexie", "ru" to "spasibo",
+    ),
+    "where is the station" to mapOf(
+        "es" to "donde esta la estacion", "fr" to "ou est la gare", "de" to "wo ist der bahnhof",
+        "it" to "dov'e la stazione", "pt" to "onde fica a estacao",
+    ),
+    "how much is this" to mapOf(
+        "es" to "cuanto cuesta esto", "fr" to "combien ca coute", "de" to "wie viel kostet das",
+        "it" to "quanto costa questo", "pt" to "quanto custa isto",
+    ),
 )
 
+// Rotated through on each captured segment so the demo does not repeat one phrase.
+private val DEMO_PHRASES: List<String> = DEMO_DICTIONARY.keys.toList()
+
 class StubTranscriber : Transcriber {
-    override suspend fun transcribe(samples: ShortArray, sampleRate: Int, hint: Language?): Transcription =
-        Transcription(text = "hello", language = hint ?: Languages.EN, isFinal = true, confidence = 0.9f)
+    private val next = AtomicInteger(0)
+
+    override suspend fun transcribe(samples: ShortArray, sampleRate: Int, hint: Language?): Transcription {
+        val phrase = DEMO_PHRASES[(next.getAndIncrement() % DEMO_PHRASES.size + DEMO_PHRASES.size) % DEMO_PHRASES.size]
+        // Tag with the caller's hint so hands-free direction detection still flips
+        // when the other side speaks; falls back to English for the demo.
+        return Transcription(text = phrase, language = hint ?: Languages.EN, isFinal = true, confidence = 0.9f)
+    }
 
     override fun detectLanguage(text: String): Language? {
         val lower = text.lowercase()
