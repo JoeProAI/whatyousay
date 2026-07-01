@@ -44,10 +44,13 @@ class StubTranscriber : Transcriber {
     private val next = AtomicInteger(0)
 
     override suspend fun transcribe(samples: ShortArray, sampleRate: Int, hint: Language?): Transcription {
-        val phrase = DEMO_PHRASES[(next.getAndIncrement() % DEMO_PHRASES.size + DEMO_PHRASES.size) % DEMO_PHRASES.size]
-        // Tag with the caller's hint so hands-free direction detection still flips
-        // when the other side speaks; falls back to English for the demo.
-        return Transcription(text = phrase, language = hint ?: Languages.EN, isFinal = true, confidence = 0.9f)
+        val key = DEMO_PHRASES[(next.getAndIncrement() % DEMO_PHRASES.size + DEMO_PHRASES.size) % DEMO_PHRASES.size]
+        // Speak the demo phrase in the hinted language so the recognized text reads
+        // as that language, matching real STT and keeping direction detection honest;
+        // falls back to the English phrase for the demo.
+        val language = hint ?: Languages.EN
+        val phrase = if (language.code == "en") key else DEMO_DICTIONARY[key]?.get(language.code) ?: key
+        return Transcription(text = phrase, language = language, isFinal = true, confidence = 0.9f)
     }
 
     override fun detectLanguage(text: String): Language? {
