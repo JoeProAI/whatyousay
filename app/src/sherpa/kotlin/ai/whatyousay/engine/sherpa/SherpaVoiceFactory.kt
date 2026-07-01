@@ -39,8 +39,23 @@ class SherpaVoiceFactory : VoiceEngineFactory {
     override fun createTranscriber(modelDir: File, language: String): Transcriber =
         SherpaTranscriber(modelDir, language)
 
-    override fun createSynthesizer(modelDir: File): Synthesizer =
-        SherpaSynthesizer(modelDir)
+    /**
+     * A pack may hold a single voice directly, or one voice per language in
+     * subdirectories named by ISO code (e.g. `en/`, `fr/`) so a two-way session can
+     * speak both sides. The synthesizer picks the voice for the language it is asked
+     * to render, falling back to any available voice.
+     */
+    override fun createSynthesizer(modelDir: File): Synthesizer {
+        val perLanguage = modelDir.listFiles()
+            ?.filter { it.isDirectory && Languages.byCode(it.name) != null }
+            .orEmpty()
+        val voices = if (perLanguage.isNotEmpty()) {
+            perLanguage.associate { it.name.lowercase() to SherpaVoice(it) }
+        } else {
+            mapOf("" to SherpaVoice(modelDir))
+        }
+        return SherpaSynthesizer(voices)
+    }
 
     override fun createVad(vadModel: File): VoiceActivityDetector =
         SherpaVad(vadModel)
@@ -90,9 +105,10 @@ internal class SherpaTranscriber(modelDir: File, language: String) : Transcriber
     override fun close() = recognizer.release()
 }
 
-internal class SherpaSynthesizer(modelDir: File) : Synthesizer {
-    private val tts: OfflineTts
-    private val nativeSampleRate: Int
+/** One loaded voice (Kokoro or Piper) plus the sample rate it renders at. */
+internal class SherpaVoice(modelDir: File) {
+    val tts: OfflineTts
+    val nativeSampleRate: Int
 
     init {
         val tokens = pick(modelDir, "tokens").absolutePath
@@ -123,13 +139,19 @@ internal class SherpaSynthesizer(modelDir: File) : Synthesizer {
         nativeSampleRate = tts.sampleRate()
     }
 
+    fun release() = tts.release()
+}
+
+internal class SherpaSynthesizer(private val voices: Map<String, SherpaVoice>) : Synthesizer {
+
     override suspend fun synthesize(text: String, language: Language, sampleRate: Int): ShortArray =
         withContext(Dispatchers.Default) {
-            val audio = tts.generate(text = text, sid = 0, speed = 1.0f)
-            toShort(resample(audio.samples, nativeSampleRate, sampleRate))
+            val voice = voices[language.code.lowercase()] ?: voices.values.first()
+            val audio = voice.tts.generate(text = text, sid = 0, speed = 1.0f)
+            toShort(resample(audio.samples, voice.nativeSampleRate, sampleRate))
         }
 
-    override fun close() = tts.release()
+    override fun close() = voices.values.forEach { it.release() }
 }
 
 internal class SherpaVad(vadModel: File) : VoiceActivityDetector {
