@@ -1,5 +1,7 @@
 package ai.whatyousay.core
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 /** A speech-to-text result. `isFinal` distinguishes streaming partials from the committed transcript. */
 data class Transcription(
     val text: String,
@@ -55,13 +57,20 @@ interface Synthesizer : AutoCloseable {
  * Convenience bundle of a configured pipeline. Closing it releases every stage,
  * each independently so one stage failing to close cannot leave another's native
  * handle open. Closing a stub pipeline is a no-op.
+ *
+ * [close] is idempotent: the hands-free service can race a teardown (a coroutine)
+ * against onDestroy (the main thread), and closing a native JNI handle twice would
+ * crash, so only the first close releases the stages.
  */
-data class TranslationPipeline(
+class TranslationPipeline(
     val transcriber: Transcriber,
     val translator: Translator,
     val synthesizer: Synthesizer,
 ) : AutoCloseable {
+    private val closed = AtomicBoolean(false)
+
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
         runCatching { transcriber.close() }
         runCatching { translator.close() }
         runCatching { synthesizer.close() }
