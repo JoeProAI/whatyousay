@@ -45,7 +45,7 @@ object ModelCatalog {
     /** Where the released, repackaged model assets live. See MODELS.md. */
     const val RELEASE = "https://github.com/JoeProAI/whatyousay/releases/download/models-v1"
 
-    /** Top-tier EN/FR packs (Whisper small, Gemma 2 2B, bilingual Piper voices). */
+    /** Real EN/FR packs (Whisper small, Qwen2.5 0.5B, bilingual Piper voices). */
     const val RELEASE_V2 = "https://github.com/JoeProAI/whatyousay/releases/download/models-v2"
 
     private val EN_FR = listOf(Languages.EN.code, Languages.FR.code)

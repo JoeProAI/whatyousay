@@ -116,13 +116,17 @@ class ConversationController(
         // Show the recognized words forming before the translation lands.
         _state.update { it.copy(status = engine.status, partial = heard, error = null) }
         // Bound the translate call: a wedged or pathologically slow turn can never leave
-        // the UI stuck on "translating" forever. Timeout and errors both recover to ready.
-        val result = runCatching {
+        // the UI stuck on "translating" forever. A timeout (null) and a real failure
+        // (exception) both recover to ready, but keep their messages distinct so an
+        // actual engine error is not hidden behind a misleading "timed out".
+        val translated = runCatching {
             withTimeoutOrNull(turnTimeoutMs) { pipeline.translator.translate(heard, direction) }
-        }.getOrNull()
+        }
+        val result = translated.getOrNull()
         if (result == null) {
             engine.ready()
-            _state.update { it.copy(error = "Translation timed out", status = engine.status, partial = "") }
+            val message = translated.exceptionOrNull()?.message ?: "Translation timed out"
+            _state.update { it.copy(error = message, status = engine.status, partial = "") }
             return
         }
         engine.commit(result)
