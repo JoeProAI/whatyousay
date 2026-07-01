@@ -48,6 +48,10 @@ class AppContainer(private val appContext: Context) {
     fun resolvePipeline(language: String = ""): PipelineFactory.Resolution =
         PipelineFactory.resolve(modelRoot, modelManager, effectiveTier(), language, voiceFactory)
 
+    /** Rebuild only the STT engine, forced to [language], reusing the loaded translator. */
+    fun buildTranscriber(language: String) =
+        PipelineFactory.buildTranscriber(modelRoot, modelManager, effectiveTier(), language, voiceFactory)
+
     /** The tier the user picked in onboarding, falling back to the detected one. */
     fun effectiveTier(): DeviceTier =
         if (settings.onboardingComplete) settings.tier else detectedTier

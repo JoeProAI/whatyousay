@@ -55,15 +55,46 @@ interface Synthesizer : AutoCloseable {
  * Convenience bundle of a configured pipeline. Closing it releases every stage,
  * each independently so one stage failing to close cannot leave another's native
  * handle open. Closing a stub pipeline is a no-op.
+ *
+ * The transcriber can be swapped in place: Whisper is loaded forced to a single
+ * source language, so changing the conversation's source rebuilds only the STT
+ * engine and leaves the (heavier) translator and synthesizer loaded.
  */
-data class TranslationPipeline(
-    val transcriber: Transcriber,
+class TranslationPipeline(
+    transcriber: Transcriber,
     val translator: Translator,
     val synthesizer: Synthesizer,
 ) : AutoCloseable {
+    private val lock = Any()
+    private var closed = false
+
+    var transcriber: Transcriber = transcriber
+        private set
+
+    /**
+     * Replace the transcriber, releasing the previous one. If the pipeline is already
+     * closed, the incoming engine is released instead of installed, so a rebuild that
+     * lands after teardown cannot leak its native handle.
+     */
+    fun swapTranscriber(next: Transcriber) {
+        synchronized(lock) {
+            if (closed) {
+                runCatching { next.close() }
+                return
+            }
+            val previous = transcriber
+            transcriber = next
+            if (previous !== next) runCatching { previous.close() }
+        }
+    }
+
     override fun close() {
-        runCatching { transcriber.close() }
-        runCatching { translator.close() }
-        runCatching { synthesizer.close() }
+        synchronized(lock) {
+            if (closed) return
+            closed = true
+            runCatching { transcriber.close() }
+            runCatching { translator.close() }
+            runCatching { synthesizer.close() }
+        }
     }
 }
